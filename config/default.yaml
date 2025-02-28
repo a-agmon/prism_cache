@@ -24,6 +24,6 @@ server:
 # Logging configuration
 logging:
   # Log level (trace, debug, info, warn, error)
-  level: info
+  level: debug
   # Log file (optional)
   file: ~ 

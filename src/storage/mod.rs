@@ -14,7 +14,7 @@ use tracing::{debug, info};
 
 use crate::config::{AppConfig, DatabaseProvider};
 use cache::Cache;
-use database::{InMemoryAdapter, SqlAdapter};
+use database::{create_database, DatabaseType};
 
 /// Type alias for entity data, which is a map of field names to values.
 pub type EntityData = HashMap<String, String>;
@@ -91,7 +91,7 @@ pub trait CacheAdapter: Send + Sync {
 /// from different storage backends.
 pub struct StorageService {
     /// Database adapter.
-    db: Arc<dyn DatabaseAdapter>,
+    db: Arc<DatabaseType>,
     /// Cache adapter.
     cache: Arc<dyn CacheAdapter>,
 }
@@ -105,24 +105,10 @@ impl StorageService {
         info!("Initializing storage service with configuration");
 
         // Initialize database adapter based on configuration
-        let db: Arc<dyn DatabaseAdapter> = match config.database.provider {
-            DatabaseProvider::InMemory => {
-                info!("Using in-memory database adapter");
-                Arc::new(InMemoryAdapter::new())
-            }
-            DatabaseProvider::Sql => {
-                let conn_string = config
-                    .database
-                    .connection_string
-                    .as_deref()
-                    .unwrap_or("default_connection");
-                info!(
-                    "Using SQL database adapter with connection string: {}",
-                    conn_string
-                );
-                Arc::new(SqlAdapter::new(conn_string))
-            }
-        };
+        let db = Arc::new(create_database(
+            &config.database.provider,
+            config.database.connection_string.as_deref(),
+        ));
 
         // Initialize cache adapter
         info!(

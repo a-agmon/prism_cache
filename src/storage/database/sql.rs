@@ -13,6 +13,7 @@ use crate::storage::{DatabaseAdapter, EntityData, StorageError, StorageResult};
 ///
 /// This adapter is used for production environments.
 /// Data is persisted in a SQL database.
+#[derive(Debug)]
 pub struct SqlAdapter {
     /// Connection string for the database
     #[allow(dead_code)]

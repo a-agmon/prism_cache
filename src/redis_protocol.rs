@@ -73,41 +73,77 @@ impl RedisFrame {
             return Err(RedisError::Protocol("Empty data".into()));
         }
 
-        // Trim any leading whitespace
-        let mut start_idx = 0;
-        while start_idx < data.len() && (data[start_idx] as char).is_whitespace() {
-            start_idx += 1;
+        // Check if this is a RESP protocol message
+        match data[0] {
+            b'*' | b'+' | b'-' | b':' | b'$' => {
+                // This is a RESP protocol message
+                match data[0] {
+                    b'*' => Self::parse_array(data),
+                    b'+' => Self::parse_simple_string(data),
+                    b'-' => Self::parse_error(data),
+                    b':' => Self::parse_integer(data),
+                    b'$' => Self::parse_bulk_string(data),
+                    _ => unreachable!(), // We already checked these cases above
+                }
+            }
+            // Only allow plain text that starts with a letter and contains valid UTF-8
+            b if b.is_ascii_alphabetic() => match String::from_utf8(data.to_vec()) {
+                Ok(s)
+                    if s.trim()
+                        .chars()
+                        .next()
+                        .map_or(false, |c| c.is_ascii_alphabetic()) =>
+                {
+                    Self::parse_plain_text(data)
+                }
+                _ => Err(RedisError::Protocol("Invalid protocol format".into())),
+            },
+            _ => Err(RedisError::Protocol("Invalid protocol format".into())),
         }
+    }
 
-        if start_idx >= data.len() {
+    /// Parse a plain text command (not in RESP format)
+    fn parse_plain_text(data: &[u8]) -> Result<Self, RedisError> {
+        // Only allow plain text that starts with a letter
+        if data.is_empty() || !data[0].is_ascii_alphabetic() {
             return Err(RedisError::Protocol(
-                "Empty data after trimming whitespace".into(),
+                "Invalid protocol format: must start with a letter".into(),
             ));
         }
 
-        // Check if this is a RESP protocol command
-        if data[start_idx] != b'*'
-            && data[start_idx] != b'+'
-            && data[start_idx] != b'-'
-            && data[start_idx] != b':'
-            && data[start_idx] != b'$'
-        {
-            debug!("Not a RESP protocol command, treating as plain text");
-            return Self::parse_plain_text(data);
+        // Convert the data to a string, requiring valid UTF-8
+        let raw_input = String::from_utf8(data.to_vec())
+            .map_err(|_| RedisError::Protocol("Invalid UTF-8 sequence".into()))?;
+
+        // Clean the input: replace all carriage returns and newlines with spaces, then trim whitespace
+        let cleaned_input = raw_input
+            .replace('\r', " ")
+            .replace('\n', " ")
+            .trim()
+            .to_string();
+
+        // If the input is empty after cleaning, return an error
+        if cleaned_input.is_empty() {
+            return Err(RedisError::Protocol("Empty command after cleaning".into()));
         }
 
-        // Parse based on the first byte
-        match data[start_idx] {
-            b'*' => Self::parse_array(&data[start_idx..]),
-            b'+' => Self::parse_simple_string(&data[start_idx..]),
-            b'-' => Self::parse_error(&data[start_idx..]),
-            b':' => Self::parse_integer(&data[start_idx..]),
-            b'$' => Self::parse_bulk_string(&data[start_idx..]),
-            _ => Err(RedisError::Protocol(format!(
-                "Unknown type byte: {}",
-                data[start_idx] as char
-            ))),
+        // Split by whitespace to get command and arguments
+        let parts: Vec<&str> = cleaned_input.split_whitespace().collect();
+
+        // Validate that the first part is a valid command (only letters)
+        if !parts[0].chars().all(|c| c.is_ascii_alphabetic()) {
+            return Err(RedisError::Protocol(
+                "Invalid command format: must contain only letters".into(),
+            ));
         }
+
+        // Create a Redis array frame with bulk strings
+        let mut frames = Vec::new();
+        for part in parts {
+            frames.push(RedisFrame::BulkString(part.to_string()));
+        }
+
+        Ok(RedisFrame::Array(frames))
     }
 
     /// Parse an array from RESP protocol
@@ -138,11 +174,10 @@ impl RedisFrame {
 
         // Parse array elements
         let mut elements = Vec::new();
-        for i in 0..length {
+        for _ in 0..length {
             if pos >= data.len() {
                 return Err(RedisError::Protocol(format!(
-                    "Unexpected end of data while parsing array element {}",
-                    i
+                    "Unexpected end of data while parsing array element"
                 )));
             }
 
@@ -176,41 +211,12 @@ impl RedisFrame {
                     5 + s.len() + s.len().to_string().len()
                 }
                 RedisFrame::Array(elements) => {
-                    // This is complex to calculate, so we'll use a different approach
-                    // We'll scan for the next element's type marker
-                    let mut next_pos = pos + 1;
-                    let mut depth = 0;
-
-                    while next_pos < data.len() {
-                        if data[next_pos] == b'*' {
-                            depth += 1;
-                        } else if depth > 0
-                            && (data[next_pos] == b'+'
-                                || data[next_pos] == b'-'
-                                || data[next_pos] == b':'
-                                || data[next_pos] == b'$')
-                        {
-                            depth -= 1;
-                        } else if depth == 0
-                            && (data[next_pos] == b'*'
-                                || data[next_pos] == b'+'
-                                || data[next_pos] == b'-'
-                                || data[next_pos] == b':'
-                                || data[next_pos] == b'$')
-                        {
-                            break;
-                        }
-                        next_pos += 1;
+                    // *, length, CRLF, elements
+                    let mut size = 3 + elements.len().to_string().len();
+                    for e in elements {
+                        size += e.to_bytes().len();
                     }
-
-                    if next_pos >= data.len() && i < length - 1 {
-                        // We reached the end of data but expected more elements
-                        return Err(RedisError::Protocol(
-                            "Unexpected end of data while parsing array".into(),
-                        ));
-                    }
-
-                    next_pos - pos
+                    size
                 }
                 RedisFrame::Null => 5, // $-1\r\n
             };
@@ -368,39 +374,6 @@ impl RedisFrame {
         Ok(RedisFrame::BulkString(string))
     }
 
-    /// Parse a plain text command (not in RESP format)
-    fn parse_plain_text(data: &[u8]) -> Result<Self, RedisError> {
-        // Convert the data to a string
-        let raw_input = String::from_utf8_lossy(data);
-
-        // Clean the input: replace all carriage returns and newlines with spaces, then trim whitespace
-        let cleaned_input = raw_input
-            .replace('\r', " ")
-            .replace('\n', " ")
-            .trim()
-            .to_string();
-
-        // If the input is empty after cleaning, return an error
-        if cleaned_input.is_empty() {
-            return Err(RedisError::Protocol("Empty command after cleaning".into()));
-        }
-
-        // Split by whitespace to get command and arguments
-        let parts: Vec<&str> = cleaned_input.split_whitespace().collect();
-
-        if parts.is_empty() {
-            return Err(RedisError::Protocol("Empty command after splitting".into()));
-        }
-
-        // Create a Redis array frame with bulk strings
-        let mut frames = Vec::new();
-        for part in parts {
-            frames.push(RedisFrame::BulkString(part.to_string()));
-        }
-
-        Ok(RedisFrame::Array(frames))
-    }
-
     /// Converts a RedisFrame to bytes.
     pub fn to_bytes(&self) -> Vec<u8> {
         match self {
@@ -554,23 +527,21 @@ mod tests {
 
     #[test]
     fn test_parse_nested_array() {
-        let data = b"*2\r\n*2\r\n+inner1\r\n+inner2\r\n$5\r\nouter\r\n";
+        let data = b"*2\r\n*2\r\n$6\r\ninner1\r\n$6\r\ninner2\r\n$5\r\nouter\r\n";
         let frame = RedisFrame::parse(data).unwrap();
-
         match frame {
             RedisFrame::Array(arr) => {
                 assert_eq!(arr.len(), 2);
-
                 match &arr[0] {
                     RedisFrame::Array(inner) => {
                         assert_eq!(inner.len(), 2);
                         match &inner[0] {
-                            RedisFrame::SimpleString(s) => assert_eq!(s, "inner1"),
-                            _ => panic!("Expected SimpleString, got {:?}", inner[0]),
+                            RedisFrame::BulkString(s) => assert_eq!(s, "inner1"),
+                            _ => panic!("Expected BulkString, got {:?}", inner[0]),
                         }
                         match &inner[1] {
-                            RedisFrame::SimpleString(s) => assert_eq!(s, "inner2"),
-                            _ => panic!("Expected SimpleString, got {:?}", inner[1]),
+                            RedisFrame::BulkString(s) => assert_eq!(s, "inner2"),
+                            _ => panic!("Expected BulkString, got {:?}", inner[1]),
                         }
                     }
                     _ => panic!("Expected Array, got {:?}", arr[0]),
@@ -633,7 +604,15 @@ mod tests {
 
     #[test]
     fn test_parse_invalid_protocol() {
-        let data = b"invalid data";
+        let data = b"!invalid data"; // Start with a non-letter, non-RESP character
+        let result = RedisFrame::parse(data);
+        assert!(result.is_err());
+
+        let data = b"123 not a command"; // Start with a number
+        let result = RedisFrame::parse(data);
+        assert!(result.is_err());
+
+        let data = b"@special chars"; // Start with a special character
         let result = RedisFrame::parse(data);
         assert!(result.is_err());
     }

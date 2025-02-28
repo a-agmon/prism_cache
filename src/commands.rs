@@ -117,7 +117,15 @@ async fn handle_get(
 
     // In a real implementation, we would retrieve the value
     // For now, just return a mock value
-    Ok(RedisFrame::BulkString(format!("value:{}", key)).to_bytes())
+    // Ok(RedisFrame::BulkString(format!("value:{}", key)).to_bytes())
+
+    // Return an array containing the key and "hello world"
+    let response = RedisFrame::Array(vec![
+        RedisFrame::BulkString(key.clone()),
+        RedisFrame::BulkString("hello world".to_string()),
+    ]);
+
+    Ok(response.to_bytes())
 }
 
 /// Handles the HGET command.

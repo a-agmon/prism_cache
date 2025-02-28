@@ -11,6 +11,7 @@ use crate::storage::{DatabaseAdapter, EntityData, StorageError, StorageResult};
 ///
 /// This adapter is used for testing and development.
 /// Data is lost when the application restarts.
+#[derive(Debug)]
 pub struct InMemoryAdapter {
     /// Data structure: entity -> id -> field -> value
     data: Arc<Mutex<HashMap<String, HashMap<String, EntityData>>>>,

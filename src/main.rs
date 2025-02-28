@@ -14,17 +14,25 @@ use config::AppConfig;
 use server::Server;
 use storage::StorageService;
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
-    // Initialize logging
-    let subscriber = FmtSubscriber::builder()
-        .with_max_level(Level::DEBUG)
-        .finish();
+/// Initialize the logging system with the configured level
+fn init_logging(log_level: &str) -> Result<(), Box<dyn Error>> {
+    let level = match log_level.to_lowercase().as_str() {
+        "error" => Level::ERROR,
+        "warn" => Level::WARN,
+        "info" => Level::INFO,
+        "debug" => Level::DEBUG,
+        "trace" => Level::TRACE,
+        _ => Level::INFO, // default to INFO if level is invalid
+    };
+
+    let subscriber = FmtSubscriber::builder().with_max_level(level).finish();
+
     tracing::subscriber::set_global_default(subscriber)?;
+    Ok(())
+}
 
-    info!("Starting Lake Cache server");
-
-    // Load configuration
+/// Load the application configuration from file or use defaults
+fn load_config() -> Result<AppConfig, Box<dyn Error>> {
     let config_path = Path::new("config/default.yaml");
     let config = if config_path.exists() {
         info!("Loading configuration from {}", config_path.display());
@@ -33,17 +41,35 @@ async fn main() -> Result<(), Box<dyn Error>> {
         info!("Configuration file not found, using defaults");
         AppConfig::default()
     };
+    Ok(config)
+}
 
-    // Initialize storage service and wrap it in an Arc for sharing
-    let storage = Arc::new(StorageService::new(&config)?);
+/// Initialize the storage service
+fn init_storage(config: &AppConfig) -> Result<Arc<StorageService>, Box<dyn Error>> {
+    let storage = Arc::new(StorageService::new(config)?);
     info!("Storage service initialized successfully");
+    Ok(storage)
+}
 
-    // Initialize server with the storage service
+/// Run the server
+async fn run_server(config: AppConfig, storage: Arc<StorageService>) -> Result<(), Box<dyn Error>> {
     let server = Server::new(config.server.clone(), Arc::clone(&storage));
-
-    // Run server
     info!("Server running on {}", config.server.bind_address);
     server.run().await?;
+    Ok(())
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+    // Load configuration and initialize components
+    let config = load_config()?;
+    init_logging(&config.logging.level)?;
+
+    info!("Starting Lake Cache server");
+
+    // Initialize services and run server
+    let storage = init_storage(&config)?;
+    run_server(config, storage).await?;
 
     Ok(())
 }

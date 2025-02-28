@@ -9,79 +9,42 @@ pub use in_memory::InMemoryAdapter;
 pub use sql::SqlAdapter;
 
 use crate::storage::{DatabaseAdapter, StorageResult};
-use std::collections::HashMap;
+use async_trait::async_trait;
 
-/// Configuration for database adapters
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-pub enum DatabaseConfig {
-    /// In-memory database configuration
-    InMemory,
-    /// SQL database configuration with connection string
-    Sql(String),
-    // Add more database types as needed
+/// Database adapter type
+#[derive(Debug)]
+pub enum DatabaseType {
+    /// In-memory database adapter
+    InMemory(InMemoryAdapter),
+    /// SQL database adapter
+    Sql(SqlAdapter),
 }
 
-/// Creates a database adapter based on the provided configuration
-#[allow(dead_code)]
-pub fn create_adapter(config: DatabaseConfig) -> StorageResult<Box<dyn DatabaseAdapter>> {
-    match config {
-        DatabaseConfig::InMemory => Ok(Box::new(InMemoryAdapter::new())),
-        DatabaseConfig::Sql(conn_string) => Ok(Box::new(SqlAdapter::new(&conn_string))),
-    }
-}
-
-/// Registry of available database adapters
-pub struct DatabaseRegistry {
-    factories: HashMap<
-        String,
-        Box<dyn Fn(String) -> StorageResult<Box<dyn DatabaseAdapter>> + Send + Sync>,
-    >,
-}
-
-impl DatabaseRegistry {
-    /// Creates a new empty registry
-    pub fn new() -> Self {
-        let mut registry = Self {
-            factories: HashMap::new(),
-        };
-
-        // Register built-in adapters
-        registry.register("memory", |_| Ok(Box::new(InMemoryAdapter::new())));
-        registry.register("sql", |conn_string| {
-            Ok(Box::new(SqlAdapter::new(&conn_string)))
-        });
-
-        registry
-    }
-
-    /// Registers a new database adapter factory
-    pub fn register<F>(&mut self, name: &str, factory: F)
-    where
-        F: Fn(String) -> StorageResult<Box<dyn DatabaseAdapter>> + Send + Sync + 'static,
-    {
-        self.factories.insert(name.to_string(), Box::new(factory));
-    }
-
-    /// Creates a database adapter by name with the given connection string
-    #[allow(dead_code)]
-    pub fn create(
+#[async_trait]
+impl DatabaseAdapter for DatabaseType {
+    async fn fetch_fields(
         &self,
-        name: &str,
-        connection_string: &str,
-    ) -> StorageResult<Box<dyn DatabaseAdapter>> {
-        match self.factories.get(name) {
-            Some(factory) => factory(connection_string.to_string()),
-            None => Err(crate::storage::StorageError::ConfigError(format!(
-                "Unknown database adapter: {}",
-                name
-            ))),
+        entity: &str,
+        id: &str,
+        fields: &[&str],
+    ) -> StorageResult<crate::storage::EntityData> {
+        match self {
+            DatabaseType::InMemory(adapter) => adapter.fetch_fields(entity, id, fields).await,
+            DatabaseType::Sql(adapter) => adapter.fetch_fields(entity, id, fields).await,
         }
     }
 }
 
-impl Default for DatabaseRegistry {
-    fn default() -> Self {
-        Self::new()
+/// Create a new database adapter based on configuration
+pub fn create_database(
+    provider: &crate::config::DatabaseProvider,
+    connection_string: Option<&str>,
+) -> DatabaseType {
+    match provider {
+        crate::config::DatabaseProvider::InMemory => DatabaseType::InMemory(InMemoryAdapter::new()),
+        crate::config::DatabaseProvider::Sql => {
+            let conn_string = connection_string.unwrap_or("default_connection");
+            DatabaseType::Sql(SqlAdapter::new(conn_string))
+        }
     }
 }
