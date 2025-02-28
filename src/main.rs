@@ -65,7 +65,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let config = load_config()?;
     init_logging(&config.logging.level)?;
 
-    info!("Starting Lake Cache server");
+    info!("Starting Prism Cache server");
 
     // Initialize services and run server
     let storage = init_storage(&config)?;

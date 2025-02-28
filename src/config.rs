@@ -146,7 +146,7 @@ impl AppConfig {
 
         // Override with environment variables
         cfg = cfg.add_source(
-            config::Environment::with_prefix("LAKE_CACHE")
+            config::Environment::with_prefix("PRISM_CACHE")
                 .separator("__")
                 .try_parsing(true),
         );

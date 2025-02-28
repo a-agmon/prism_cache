@@ -1,5 +1,5 @@
 [package]
-name = "lake_cache"
+name = "prism_cache"
 version = "0.1.0"
 edition = "2021"
 

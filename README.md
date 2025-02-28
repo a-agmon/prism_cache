@@ -1,10 +1,10 @@
-# Lake Cache
+# Prism Cache
 
 A Redis-protocol compatible caching layer for databases, bridging the gap between traditional databases and high-performance caching.
 
 ## Overview
 
-Lake Cache provides a Redis-compatible interface to your existing databases, offering:
+Prism Cache provides a Redis-compatible interface to your existing databases, offering:
 
 - **Redis Protocol Support**: Interact with your database using familiar Redis commands
 - **Transparent Caching**: Automatic caching of database queries with configurable TTL
@@ -14,10 +14,10 @@ Lake Cache provides a Redis-compatible interface to your existing databases, off
 
 ## How It Works
 
-Lake Cache sits between your application and database:
+Prism Cache sits between your application and database:
 
 ```
-Application <-> Lake Cache <-> Database
+Application <-> Prism Cache <-> Database
      ↓              ↓
 Redis Protocol   Cache Layer
 ```
@@ -62,7 +62,7 @@ Redis Protocol   Cache Layer
 
 ## Caching Strategy
 
-Lake Cache employs a smart caching strategy:
+Prism Cache employs a smart caching strategy:
 
 ```rust
 pub async fn fetch_fields(&self, entity: &str, id: &str, fields: &[&str]) -> StorageResult<EntityData> {
@@ -226,10 +226,10 @@ cache:
 Or via environment variables:
 
 ```bash
-LAKE_CACHE__DATABASE__PROVIDER=sql
-LAKE_CACHE__DATABASE__CONNECTION_STRING=postgres://localhost/mydb
-LAKE_CACHE__CACHE__MAX_ENTRIES=10000
-LAKE_CACHE__CACHE__TTL_SECONDS=3600
+PRISM_CACHE__DATABASE__PROVIDER=sql
+PRISM_CACHE__DATABASE__CONNECTION_STRING=postgres://localhost/mydb
+PRISM_CACHE__CACHE__MAX_ENTRIES=10000
+PRISM_CACHE__CACHE__TTL_SECONDS=3600
 ```
 
 ## Usage
@@ -239,7 +239,7 @@ Connect using any Redis client:
 ```python
 import redis
 
-# Connect to Lake Cache
+# Connect to Prism Cache
 r = redis.Redis(host='localhost', port=6379)
 
 # Use regular Redis commands - they'll be cached automatically
