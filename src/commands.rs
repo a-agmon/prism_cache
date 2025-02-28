@@ -1,111 +1,192 @@
+//! Command handling for Redis protocol.
+//!
+//! This module handles Redis commands and translates them to storage operations.
+
+use std::sync::Arc;
+use tracing::{debug, error, info};
+
 use crate::redis_protocol::{RedisError, RedisFrame};
-use tracing::{debug, info, instrument};
+use crate::storage::{StorageError, StorageService};
 
-#[instrument(skip(frame))]
-pub async fn handle_command(frame: RedisFrame) -> Result<Vec<u8>, RedisError> {
-    match frame {
-        RedisFrame::Array(parts) => {
-            if parts.is_empty() {
-                return Err(RedisError::InvalidCommand("Empty command".to_string()));
-            }
-
-            let command = parts[0]
-                .as_string()
-                .ok_or_else(|| RedisError::InvalidCommand("Command must be a string".to_string()))?
-                .to_uppercase();
-
-            debug!("Received command: {}", command);
-
-            match command.as_str() {
-                "SET" => handle_set(&parts).await,
-                "GET" => handle_get(&parts).await,
-                "HGET" => handle_hget(&parts).await,
-                _ => {
-                    info!("Unsupported command: {}", command);
-                    Ok(RedisFrame::Error(format!("ERR unknown command '{}'", command)).to_bytes())
-                }
-            }
+/// Maps storage errors to Redis errors.
+fn map_error(err: StorageError) -> RedisError {
+    match err {
+        StorageError::EntityNotFound(msg) => RedisError::NotFound(msg),
+        StorageError::FieldNotFound(msg) => RedisError::NotFound(msg),
+        StorageError::DatabaseError(msg) => {
+            RedisError::Internal(format!("Database error: {}", msg))
         }
-        _ => Err(RedisError::InvalidCommand(
-            "Expected array for command".to_string(),
-        )),
+        StorageError::CacheError(msg) => RedisError::Internal(format!("Cache error: {}", msg)),
+        StorageError::ConfigError(msg) => RedisError::Internal(format!("Config error: {}", msg)),
     }
 }
 
-#[instrument(skip(parts))]
-async fn handle_set(parts: &[RedisFrame]) -> Result<Vec<u8>, RedisError> {
-    if parts.len() < 3 {
-        return Err(RedisError::InvalidCommand(
-            "SET requires at least key and value arguments".to_string(),
-        ));
+/// Handles a Redis command.
+///
+/// This function dispatches the command to the appropriate handler.
+pub async fn handle_command(
+    frame: RedisFrame,
+    storage: Arc<StorageService>,
+) -> Result<Vec<u8>, RedisError> {
+    //debug!("Handling command: {:?}", frame);
+
+    // Extract command and arguments
+    let (command, args) = match frame {
+        RedisFrame::Array(items) if !items.is_empty() => {
+            let command = match &items[0] {
+                RedisFrame::BulkString(cmd) => cmd.to_uppercase(),
+                _ => {
+                    return Err(RedisError::Protocol(
+                        "Expected bulk string for command".into(),
+                    ))
+                }
+            };
+
+            // Create a new vector for the arguments
+            let args = items[1..].to_vec();
+            (command, args)
+        }
+        _ => return Err(RedisError::Protocol("Expected array for command".into())),
+    };
+
+    // Dispatch to appropriate handler
+    match command.as_str() {
+        "PING" => {
+            info!("Handling PING command");
+            Ok(RedisFrame::SimpleString("PONG".into()).to_bytes())
+        }
+        "SET" => handle_set(&args, Arc::clone(&storage)).await,
+        "GET" => handle_get(&args, Arc::clone(&storage)).await,
+        "HGET" => handle_hget(&args, Arc::clone(&storage)).await,
+        _ => {
+            error!("Unknown command: {}", command);
+            Err(RedisError::UnknownCommand(command))
+        }
+    }
+}
+
+/// Handles the SET command.
+///
+/// SET key value
+async fn handle_set(
+    args: &[RedisFrame],
+    _storage: Arc<StorageService>,
+) -> Result<Vec<u8>, RedisError> {
+    if args.len() < 2 {
+        return Err(RedisError::WrongArity("SET".into()));
     }
 
-    let key = parts[1]
-        .as_string()
-        .ok_or_else(|| RedisError::InvalidCommand("SET key must be a string".to_string()))?;
+    let key = match &args[0] {
+        RedisFrame::BulkString(key) => key,
+        _ => return Err(RedisError::Protocol("Expected bulk string for key".into())),
+    };
 
-    let value = parts[2]
-        .as_string()
-        .ok_or_else(|| RedisError::InvalidCommand("SET value must be a string".to_string()))?;
+    let value = match &args[1] {
+        RedisFrame::BulkString(value) => value,
+        _ => {
+            return Err(RedisError::Protocol(
+                "Expected bulk string for value".into(),
+            ))
+        }
+    };
 
-    info!("SET command received for key: {}", key);
-    debug!("Value to set: {}", value);
+    debug!("SET {} {}", key, value);
 
-    // TODO: Implement the actual SET logic here
+    // In a real implementation, we would store the value
     // For now, just return OK
-    Ok(RedisFrame::SimpleString("OK".to_string()).to_bytes())
+    Ok(RedisFrame::SimpleString("OK".into()).to_bytes())
 }
 
-#[instrument(skip(parts))]
-async fn handle_get(parts: &[RedisFrame]) -> Result<Vec<u8>, RedisError> {
-    if parts.len() < 2 {
-        return Err(RedisError::InvalidCommand(
-            "GET requires a key argument".to_string(),
-        ));
+/// Handles the GET command.
+///
+/// GET key
+async fn handle_get(
+    args: &[RedisFrame],
+    _storage: Arc<StorageService>,
+) -> Result<Vec<u8>, RedisError> {
+    if args.len() != 1 {
+        return Err(RedisError::WrongArity("GET".into()));
     }
 
-    let key = parts[1]
-        .as_string()
-        .ok_or_else(|| RedisError::InvalidCommand("GET key must be a string".to_string()))?;
+    let key = match &args[0] {
+        RedisFrame::BulkString(key) => key,
+        _ => return Err(RedisError::Protocol("Expected bulk string for key".into())),
+    };
 
-    info!("GET command received for key: {}", key);
+    debug!("GET {}", key);
 
-    // TODO: Implement the actual GET logic here
-    // For now, just return null
-    Ok(RedisFrame::Null.to_bytes())
+    // In a real implementation, we would retrieve the value
+    // For now, just return a mock value
+    Ok(RedisFrame::BulkString(format!("value:{}", key)).to_bytes())
 }
 
-#[instrument(skip(parts))]
-async fn handle_hget(parts: &[RedisFrame]) -> Result<Vec<u8>, RedisError> {
-    // lets see how many parts we have
-    debug!("HGET command received with {} parts", parts.len());
-    // the first part needs to be key and id: users:1234
-    let key = parts[1]
-        .as_string()
-        .ok_or_else(|| RedisError::InvalidCommand("HGET key must be a string".to_string()))?;
-    // now we need to make sure we have this form <entity>:<id>
+/// Handles the HGET command.
+///
+/// HGET key field [field2 field3 ...]
+/// The standard Redis HGET supports only one field, but we'll extend it to support multiple fields
+async fn handle_hget(
+    args: &[RedisFrame],
+    storage: Arc<StorageService>,
+) -> Result<Vec<u8>, RedisError> {
+    //debug!("HGET args: {:?}", args);
+    if args.is_empty() || args.len() < 2 {
+        return Err(RedisError::WrongArity("HGET".into()));
+    }
+
+    // key should be <entity>:<id>
+    let key = match &args[0] {
+        RedisFrame::BulkString(key) => key,
+        _ => return Err(RedisError::Protocol("Expected bulk string for key".into())),
+    };
     let key_parts: Vec<&str> = key.split(':').collect();
     if key_parts.len() != 2 {
-        return Err(RedisError::InvalidCommand(
-            "HGET key must be in the form <entity>:<id>".to_string(),
+        return Err(RedisError::Protocol(
+            "Key should be in format entity:id".into(),
         ));
     }
+
     let entity = key_parts[0];
     let id = key_parts[1];
-    debug!("HGET command for entity: {} and id: {}", entity, id);
-    // the rest of the parts are the fields we want to get
-    let fields: Result<Vec<&str>, RedisError> = parts[2..]
+    // Extract all fields
+    let fields: Result<Vec<&str>, RedisError> = args[1..]
         .iter()
-        .map(|part| {
-            part.as_string().ok_or_else(|| {
-                RedisError::InvalidCommand("HGET field must be a string".to_string())
-            })
+        .map(|arg| match arg {
+            RedisFrame::BulkString(field) => Ok(field.as_str()),
+            _ => Err(RedisError::Protocol(
+                "Expected bulk string for field".into(),
+            )),
         })
         .collect();
     let fields = fields?;
-    debug!("Fields to get: {:?}", fields);
+    debug!(
+        "HGET requested entity:{}, id: {} fields: {:?}",
+        entity, id, fields
+    );
 
-    // TODO: Implement the actual GET logic here
-    // For now, just return null
-    Ok(RedisFrame::Null.to_bytes())
+    // Fetch the fields from storage
+    match storage.fetch_fields(entity, id, &fields).await {
+        Ok(data) => {
+            if fields.len() == 1 {
+                // If only one field was requested, return it as a simple value
+                let field = fields[0];
+                if let Some(value) = data.get(field) {
+                    Ok(RedisFrame::BulkString(value.clone()).to_bytes())
+                } else {
+                    Ok(RedisFrame::Null.to_bytes())
+                }
+            } else {
+                // If multiple fields were requested, return them as an array
+                let mut response = Vec::new();
+                for field in &fields {
+                    if let Some(value) = data.get(*field) {
+                        response.push(RedisFrame::BulkString(value.clone()));
+                    } else {
+                        response.push(RedisFrame::Null);
+                    }
+                }
+                Ok(RedisFrame::Array(response).to_bytes())
+            }
+        }
+        Err(e) => Err(map_error(e)),
+    }
 }

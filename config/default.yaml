@@ -1,0 +1,29 @@
+# Default configuration for Lake Cache
+
+# Database configuration
+database:
+  # Database provider to use (inmemory, sql)
+  provider: inmemory
+  # Connection string for the database (if applicable)
+  connection_string: ~
+  # Additional provider-specific settings
+  settings: {}
+
+# Cache configuration
+cache:
+  # Maximum number of entries in the cache
+  max_entries: 10000
+  # Time-to-live for cache entries in seconds (5 minutes)
+  ttl_seconds: 300
+
+# Server configuration
+server:
+  # Address to bind to
+  bind_address: 127.0.0.1:6379
+
+# Logging configuration
+logging:
+  # Log level (trace, debug, info, warn, error)
+  level: info
+  # Log file (optional)
+  file: ~ 
