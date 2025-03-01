@@ -3,7 +3,6 @@
 //! This module provides a unified interface for storing and retrieving data
 //! from different storage backends.
 
-pub mod cache;
 pub mod database;
 pub mod moka_cache;
 
@@ -14,7 +13,6 @@ use thiserror::Error;
 use tracing::{debug, info};
 
 use crate::config::AppConfig;
-use cache::Cache;
 use database::{create_database, DatabaseType};
 use moka_cache::MokaBasedCache;
 
@@ -57,15 +55,17 @@ pub enum StorageError {
 /// Database adapter trait for interacting with different database backends.
 #[async_trait]
 pub trait DatabaseAdapter: Send + Sync {
-    /// Fetches fields for an entity from the database.
+    /// Fetches records from the database that match the given entity and id pattern.
+    /// Returns a vector of matching records.
     ///
-    /// If fields is empty, returns all fields.
-    async fn fetch_fields(
+    /// The id parameter can contain wildcards or patterns depending on the database implementation.
+    /// If fields is empty, returns all fields for each matching record.
+    async fn fetch_record(
         &self,
         entity: &str,
         id: &str,
         fields: &[&str],
-    ) -> StorageResult<EntityData>;
+    ) -> StorageResult<Vec<EntityData>>;
 }
 
 /// Cache adapter trait.
@@ -113,7 +113,6 @@ impl StorageService {
         // Initialize database adapter based on configuration
         let db = Arc::new(create_database(
             &config.database.provider,
-            config.database.connection_string.as_deref(),
             config.database.settings.clone(),
         ));
 
@@ -164,15 +163,19 @@ impl StorageService {
             _ => {
                 debug!("Cache miss for {}:{}, fetching from database", entity, id);
                 // Fetch from database
-                let db_result = self.db.fetch_fields(entity, id, fields).await?;
+                let db_result = self.db.fetch_record(entity, id, fields).await?;
 
                 // Store in cache
                 if !db_result.is_empty() {
                     debug!("Storing {}:{} in cache", entity, id);
-                    self.cache.set_fields(entity, id, &db_result).await?;
+                    self.cache.set_fields(entity, id, &db_result[0]).await?;
                 }
 
-                Ok(db_result)
+                Ok(if db_result.is_empty() {
+                    EntityData::new()
+                } else {
+                    db_result[0].clone()
+                })
             }
         }
     }

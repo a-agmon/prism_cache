@@ -27,9 +27,6 @@ pub enum ConfigError {
 pub enum DatabaseProvider {
     /// Mock database (in-memory, for testing)
     Mock,
-    /// SQL database
-    Sql,
-    // Add more database providers as needed
 }
 
 impl TryFrom<String> for DatabaseProvider {
@@ -38,11 +35,7 @@ impl TryFrom<String> for DatabaseProvider {
     fn try_from(s: String) -> Result<Self, Self::Error> {
         match s.to_lowercase().as_str() {
             "mock" => Ok(DatabaseProvider::Mock),
-            "sql" => Ok(DatabaseProvider::Sql),
-            _ => Err(format!(
-                "Invalid database provider '{}'. Available providers are: mock, sql",
-                s
-            )),
+            _ => Err(format!("Invalid database provider '{}'.", s)),
         }
     }
 }
@@ -59,10 +52,6 @@ pub struct DatabaseConfig {
     /// Database provider to use
     #[serde(default)]
     pub provider: DatabaseProvider,
-
-    /// Connection string for the database (if applicable)
-    #[serde(default)]
-    pub connection_string: Option<String>,
 
     /// Additional provider-specific settings
     #[serde(default)]
@@ -189,7 +178,7 @@ impl AppConfig {
                 // If it's a database provider error, try to extract the invalid value
                 if let Some(invalid_value) = e.to_string().split('`').nth(1) {
                     return ConfigError::InvalidDatabaseProvider(format!(
-                        "Invalid database provider '{}'. Available providers are: mock, sql",
+                        "Invalid database provider '{}'. Available providers are: mock",
                         invalid_value
                     ));
                 }

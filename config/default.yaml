@@ -2,12 +2,14 @@
 
 # Database configuration
 database:
-  # Database provider to use (mock, sql)
+  # Database provider to use (mock)
   provider: mock
-  # Connection string for the database (if applicable)
-  connection_string: ~
   # Additional provider-specific settings
-  settings: {}
+  settings:
+    # Example settings for mock adapter
+    default_age: "25"  # Default age for new users
+    name_prefix: "Test_"  # Prefix for user names
+    max_users: "100"  # Maximum number of users
 
 # Cache configuration
 cache:
