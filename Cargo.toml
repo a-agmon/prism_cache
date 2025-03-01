@@ -12,3 +12,4 @@ async-trait = "0.1.77"
 config = { version = "0.15.0", features = ["yaml"] }
 serde = { version = "1.0.196", features = ["derive"] }
 serde_yaml = "0.9.31"
+moka = { version = "0.12", features = ["future"] }

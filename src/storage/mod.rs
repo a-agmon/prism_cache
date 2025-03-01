@@ -5,6 +5,7 @@
 
 pub mod cache;
 pub mod database;
+pub mod moka_cache;
 
 use async_trait::async_trait;
 use std::collections::HashMap;
@@ -15,6 +16,7 @@ use tracing::{debug, info};
 use crate::config::AppConfig;
 use cache::Cache;
 use database::{create_database, DatabaseType};
+use moka_cache::MokaBasedCache;
 
 /// Type alias for entity data, which is a map of field names to values.
 pub type EntityData = HashMap<String, String>;
@@ -115,12 +117,12 @@ impl StorageService {
             config.database.settings.clone(),
         ));
 
-        // Initialize cache adapter
+        // Initialize cache adapter using Moka
         info!(
-            "Initializing cache with max entries: {}, TTL: {} seconds",
+            "Initializing Moka cache with max entries: {}, TTL: {} seconds",
             config.cache.max_entries, config.cache.ttl_seconds
         );
-        let cache = Arc::new(Cache::new(config.cache.clone()));
+        let cache = Arc::new(MokaBasedCache::new(config.cache.clone()));
 
         Ok(Self { db, cache })
     }
