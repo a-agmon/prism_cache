@@ -12,7 +12,7 @@ use std::sync::Arc;
 use thiserror::Error;
 use tracing::{debug, info};
 
-use crate::config::{AppConfig, DatabaseProvider};
+use crate::config::AppConfig;
 use cache::Cache;
 use database::{create_database, DatabaseType};
 
@@ -28,6 +28,10 @@ pub enum StorageError {
     /// Error from the database.
     #[error("Database error: {0}")]
     DatabaseError(String),
+
+    /// Record not in database.
+    #[error("Record not in database: {0}")]
+    RecordNotInDatabase(String),
 
     /// Error from the cache.
     #[error("Cache error: {0}")]
@@ -108,6 +112,7 @@ impl StorageService {
         let db = Arc::new(create_database(
             &config.database.provider,
             config.database.connection_string.as_deref(),
+            config.database.settings.clone(),
         ));
 
         // Initialize cache adapter

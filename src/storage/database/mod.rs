@@ -2,11 +2,14 @@
 //!
 //! This module provides implementations for different database backends.
 
-pub mod in_memory;
+pub mod mock;
 pub mod sql;
 
-pub use in_memory::InMemoryAdapter;
+use std::collections::HashMap;
+
+pub use mock::MockAdapter;
 pub use sql::SqlAdapter;
+
 
 use crate::storage::{DatabaseAdapter, StorageResult};
 use async_trait::async_trait;
@@ -15,7 +18,7 @@ use async_trait::async_trait;
 #[derive(Debug)]
 pub enum DatabaseType {
     /// In-memory database adapter
-    InMemory(InMemoryAdapter),
+    Mock(MockAdapter),
     /// SQL database adapter
     Sql(SqlAdapter),
 }
@@ -29,7 +32,7 @@ impl DatabaseAdapter for DatabaseType {
         fields: &[&str],
     ) -> StorageResult<crate::storage::EntityData> {
         match self {
-            DatabaseType::InMemory(adapter) => adapter.fetch_fields(entity, id, fields).await,
+            DatabaseType::Mock(adapter) => adapter.fetch_fields(entity, id, fields).await,
             DatabaseType::Sql(adapter) => adapter.fetch_fields(entity, id, fields).await,
         }
     }
@@ -39,9 +42,10 @@ impl DatabaseAdapter for DatabaseType {
 pub fn create_database(
     provider: &crate::config::DatabaseProvider,
     connection_string: Option<&str>,
+    settings: HashMap<String, String>,
 ) -> DatabaseType {
     match provider {
-        crate::config::DatabaseProvider::InMemory => DatabaseType::InMemory(InMemoryAdapter::new()),
+        crate::config::DatabaseProvider::Mock => DatabaseType::Mock(MockAdapter::new()),
         crate::config::DatabaseProvider::Sql => {
             let conn_string = connection_string.unwrap_or("default_connection");
             DatabaseType::Sql(SqlAdapter::new(conn_string))

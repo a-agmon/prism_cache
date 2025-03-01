@@ -13,6 +13,7 @@ fn map_error(err: StorageError) -> RedisError {
     match err {
         StorageError::EntityNotFound(msg) => RedisError::NotFound(msg),
         StorageError::FieldNotFound(msg) => RedisError::NotFound(msg),
+        StorageError::RecordNotInDatabase(msg) => RedisError::NotFound(msg),
         StorageError::DatabaseError(msg) => {
             RedisError::Internal(format!("Database error: {}", msg))
         }

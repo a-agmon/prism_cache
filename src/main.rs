@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::path::Path;
 use std::sync::Arc;
-use tracing::{info, Level};
+use tracing::{error, info, Level};
 use tracing_subscriber::FmtSubscriber;
 
 mod commands;
@@ -10,7 +10,7 @@ mod redis_protocol;
 mod server;
 mod storage;
 
-use config::AppConfig;
+use config::{AppConfig, ConfigError};
 use server::Server;
 use storage::StorageService;
 
@@ -36,7 +36,18 @@ fn load_config() -> Result<AppConfig, Box<dyn Error>> {
     let config_path = Path::new("config/default.yaml");
     let config = if config_path.exists() {
         info!("Loading configuration from {}", config_path.display());
-        AppConfig::from_file(config_path)?
+        match AppConfig::from_file(config_path) {
+            Ok(config) => config,
+            Err(ConfigError::InvalidDatabaseProvider(msg)) => {
+                error!("Configuration Error: {}", msg);
+                error!(
+                    "Please check your configuration file at {}",
+                    config_path.display()
+                );
+                return Err(Box::new(ConfigError::InvalidDatabaseProvider(msg)));
+            }
+            Err(e) => return Err(Box::new(e)),
+        }
     } else {
         info!("Configuration file not found, using defaults");
         AppConfig::default()

@@ -215,8 +215,8 @@ Configure via `config/default.yaml`:
 
 ```yaml
 database:
-  provider: sql  # Choose provider: in_memory, sql
-  connection_string: "postgres://localhost/mydb"
+  provider: mock  # Available providers: mock, sql
+  connection_string: "postgres://localhost/mydb"  # Only needed for sql provider
 
 cache:
   max_entries: 10000  # Maximum number of cached entries
@@ -226,7 +226,7 @@ cache:
 Or via environment variables:
 
 ```bash
-PRISM_CACHE__DATABASE__PROVIDER=sql
+PRISM_CACHE__DATABASE__PROVIDER=mock  # Available: mock, sql
 PRISM_CACHE__DATABASE__CONNECTION_STRING=postgres://localhost/mydb
 PRISM_CACHE__CACHE__MAX_ENTRIES=10000
 PRISM_CACHE__CACHE__TTL_SECONDS=3600

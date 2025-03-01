@@ -2,8 +2,8 @@
 
 # Database configuration
 database:
-  # Database provider to use (inmemory, sql)
-  provider: inmemory
+  # Database provider to use (mock, sql)
+  provider: mock
   # Connection string for the database (if applicable)
   connection_string: ~
   # Additional provider-specific settings
