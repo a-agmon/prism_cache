@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::{error::Error, str::FromStr};
 use std::path::Path;
 use std::sync::Arc;
 use tracing::{Level, error, info};
@@ -16,17 +16,8 @@ use storage::StorageService;
 
 /// Initialize the logging system with the configured level
 fn init_logging(log_level: &str) -> Result<(), Box<dyn Error>> {
-    let level = match log_level.to_lowercase().as_str() {
-        "error" => Level::ERROR,
-        "warn" => Level::WARN,
-        "info" => Level::INFO,
-        "debug" => Level::DEBUG,
-        "trace" => Level::TRACE,
-        _ => Level::INFO, // default to INFO if level is invalid
-    };
-
+    let level = Level::from_str(log_level).unwrap();
     let subscriber = FmtSubscriber::builder().with_max_level(level).finish();
-
     tracing::subscriber::set_global_default(subscriber)?;
     Ok(())
 }
@@ -72,15 +63,10 @@ async fn run_server(config: AppConfig, storage: Arc<StorageService>) -> Result<(
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    // Load configuration and initialize components
     let config = load_config()?;
     init_logging(&config.logging.level)?;
-
     info!("Starting Prism Cache server");
-
-    // Initialize services and run server
     let storage = init_storage(&config)?;
     run_server(config, storage).await?;
-
     Ok(())
 }
