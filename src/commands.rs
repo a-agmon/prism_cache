@@ -2,8 +2,9 @@
 //!
 //! This module handles Redis commands and translates them to storage operations.
 
+use serde_json::Value;
 use std::sync::Arc;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, trace};
 
 use crate::redis_protocol::{RedisError, RedisFrame};
 use crate::storage::{StorageError, StorageService};
@@ -19,6 +20,7 @@ fn map_error(err: StorageError) -> RedisError {
         }
         StorageError::CacheError(msg) => RedisError::Internal(format!("Cache error: {}", msg)),
         StorageError::ConfigError(msg) => RedisError::Internal(format!("Config error: {}", msg)),
+        StorageError::RecordNotFoundInCache(msg) => RedisError::NotFound(msg),
     }
 }
 
@@ -39,7 +41,7 @@ pub async fn handle_command(
                 _ => {
                     return Err(RedisError::Protocol(
                         "Expected bulk string for command".into(),
-                    ))
+                    ));
                 }
             };
 
@@ -87,7 +89,7 @@ async fn handle_set(
         _ => {
             return Err(RedisError::Protocol(
                 "Expected bulk string for value".into(),
-            ))
+            ));
         }
     };
 
@@ -103,30 +105,39 @@ async fn handle_set(
 /// GET key
 async fn handle_get(
     args: &[RedisFrame],
-    _storage: Arc<StorageService>,
+    storage: Arc<StorageService>,
 ) -> Result<Vec<u8>, RedisError> {
+    trace!("Entering handle_get with args: {:?}", args);
     if args.len() != 1 {
+        debug!("Wrong number of arguments: expected 1, got {}", args.len());
         return Err(RedisError::WrongArity("GET".into()));
     }
 
     let key = match &args[0] {
-        RedisFrame::BulkString(key) => key,
+        RedisFrame::BulkString(key) => {
+            trace!("Extracted key: {}", key);
+            key
+        }
         _ => return Err(RedisError::Protocol("Expected bulk string for key".into())),
     };
 
-    debug!("GET {}", key);
+    let (entity, id) = key
+        .split_once(':')
+        .ok_or(RedisError::Protocol("Expected entity:id format".into()))?;
+    debug!("Processing GET request for [{entity}]:[{id}]");
 
-    // In a real implementation, we would retrieve the value
-    // For now, just return a mock value
-    // Ok(RedisFrame::BulkString(format!("value:{}", key)).to_bytes())
-
-    // Return an array containing the key and "hello world"
-    let response = RedisFrame::Array(vec![
-        RedisFrame::BulkString(key.clone()),
-        RedisFrame::BulkString("hello world".to_string()),
-    ]);
-
-    Ok(response.to_bytes())
+    let record = storage.fetch_record(entity, id, &[]).await;
+    match record {
+        Ok(record) => {
+            trace!("Found record: {}", record);
+            Ok(RedisFrame::BulkString(record.to_string()).to_bytes())
+        }
+        Err(StorageError::EntityNotFound(_)) => {
+            debug!("Entity not found for key: {}", key);
+            Ok(RedisFrame::Null.to_bytes())
+        }
+        Err(e) => Err(map_error(e)),
+    }
 }
 
 /// Handles the HGET command.
@@ -137,64 +148,47 @@ async fn handle_hget(
     args: &[RedisFrame],
     storage: Arc<StorageService>,
 ) -> Result<Vec<u8>, RedisError> {
-    //debug!("HGET args: {:?}", args);
+    debug!("HGET  called -> args: {:?}", args);
     if args.is_empty() || args.len() < 2 {
         return Err(RedisError::WrongArity("HGET".into()));
     }
-
-    // key should be <entity>:<id>
     let key = match &args[0] {
         RedisFrame::BulkString(key) => key,
         _ => return Err(RedisError::Protocol("Expected bulk string for key".into())),
     };
-    let key_parts: Vec<&str> = key.split(':').collect();
-    if key_parts.len() != 2 {
-        return Err(RedisError::Protocol(
-            "Key should be in format entity:id".into(),
-        ));
-    }
+    let (entity, id) = key
+        .split_once(':')
+        .ok_or(RedisError::Protocol("Expected entity:id format".into()))?;
 
-    let entity = key_parts[0];
-    let id = key_parts[1];
-    // Extract all fields
-    let fields: Result<Vec<&str>, RedisError> = args[1..]
-        .iter()
-        .map(|arg| match arg {
-            RedisFrame::BulkString(field) => Ok(field.as_str()),
-            _ => Err(RedisError::Protocol(
-                "Expected bulk string for field".into(),
-            )),
-        })
-        .collect();
-    let fields = fields?;
-    debug!(
-        "HGET requested entity:{}, id: {} fields: {:?}",
-        entity, id, fields
-    );
+    debug!("HGET [{entity}]:[{id}]", entity = entity, id = id);
+    let record = storage.fetch_record(entity, id, &[]).await;
 
-    // Fetch the fields from storage
-    match storage.fetch_fields(entity, id, &fields).await {
-        Ok(data) => {
-            if fields.len() == 1 {
-                // If only one field was requested, return it as a simple value
-                let field = fields[0];
-                if let Some(value) = data.get(field) {
-                    Ok(RedisFrame::BulkString(value.clone()).to_bytes())
-                } else {
-                    Ok(RedisFrame::Null.to_bytes())
-                }
-            } else {
-                // If multiple fields were requested, return them as an array
-                let mut response = Vec::new();
-                for field in &fields {
-                    if let Some(value) = data.get(*field) {
-                        response.push(RedisFrame::BulkString(value.clone()));
+    match record {
+        Ok(record) => {
+            // Extract requested field values from record
+            let values: Vec<String> = args[1..]
+                .iter()
+                .filter_map(|field| {
+                    if let RedisFrame::BulkString(field_name) = field {
+                        if record[field_name] != Value::Null {
+                            Some(record[field_name].to_string())
+                        } else {
+                            None
+                        }
                     } else {
-                        response.push(RedisFrame::Null);
+                        None
                     }
-                }
-                Ok(RedisFrame::Array(response).to_bytes())
-            }
+                })
+                .collect();
+
+            Ok(
+                RedisFrame::Array(values.into_iter().map(RedisFrame::BulkString).collect())
+                    .to_bytes(),
+            )
+        }
+        Err(StorageError::EntityNotFound(_)) => {
+            debug!("Entity not found for key: {}", key);
+            Ok(RedisFrame::Null.to_bytes())
         }
         Err(e) => Err(map_error(e)),
     }

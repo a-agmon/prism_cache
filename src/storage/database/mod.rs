@@ -3,13 +3,14 @@
 //! This module provides implementations for different database backends.
 
 pub mod mock;
+pub mod postgres;
 
+use async_trait::async_trait;
+use serde_json::Value;
 use std::collections::HashMap;
 
+use crate::storage::{DatabaseAdapter, StorageResult};
 pub use mock::MockAdapter;
-
-use crate::storage::{DatabaseAdapter, EntityData, StorageResult};
-use async_trait::async_trait;
 
 /// Database adapter type
 #[derive(Debug)]
@@ -25,9 +26,9 @@ impl DatabaseAdapter for DatabaseType {
         entity: &str,
         id: &str,
         fields: &[&str],
-    ) -> StorageResult<Vec<EntityData>> {
+    ) -> StorageResult<Vec<Value>> {
         match self {
-            DatabaseType::Mock(adapter) => adapter.fetch_record(entity, id, fields).await,
+            Self::Mock(adapter) => adapter.fetch_record(entity, id, fields).await,
         }
     }
 }

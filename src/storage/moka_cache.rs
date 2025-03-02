@@ -5,11 +5,12 @@
 
 use async_trait::async_trait;
 use moka::future::Cache as MokaCache;
+use serde_json::{Value, json};
 use std::time::Duration;
 use tracing::debug;
 
 use crate::config::CacheConfig;
-use crate::storage::{CacheAdapter, EntityData, StorageError, StorageResult};
+use crate::storage::{CacheAdapter, StorageError, StorageResult};
 
 /// Cache key type combining entity and id
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
@@ -27,7 +28,7 @@ struct CacheKey {
 /// - Asynchronous API
 pub struct MokaBasedCache {
     /// The underlying Moka cache instance
-    cache: MokaCache<CacheKey, EntityData>,
+    cache: MokaCache<CacheKey, Value>,
 }
 
 impl MokaBasedCache {
@@ -47,24 +48,16 @@ impl MokaBasedCache {
     /// Creates a cache key from entity and id
     fn create_key(entity: &str, id: &str) -> CacheKey {
         CacheKey {
-            entity: entity.to_string(),
-            id: id.to_string(),
+            entity: entity.into(),
+            id: id.into(),
         }
     }
 }
 
 #[async_trait]
 impl CacheAdapter for MokaBasedCache {
-    async fn get_fields(
-        &self,
-        entity: &str,
-        id: &str,
-        fields: &[&str],
-    ) -> StorageResult<EntityData> {
-        debug!("Cache: Getting fields {:?} for {}:{}", fields, entity, id);
-
+    async fn get_record(&self, entity: &str, id: &str, fields: &[&str]) -> StorageResult<Value> {
         let key = Self::create_key(entity, id);
-
         if let Some(entry) = self.cache.get(&key).await {
             // If fields is empty, return all fields
             if fields.is_empty() {
@@ -72,19 +65,22 @@ impl CacheAdapter for MokaBasedCache {
             }
 
             // Filter the requested fields
-            let mut result = EntityData::new();
+            let mut result = json!({});
             for &field in fields {
-                if let Some(value) = entry.get(field) {
-                    result.insert(field.to_string(), value.clone());
+                if entry[field] != Value::Null {
+                    result[field] = entry[field].clone();
                 }
             }
             Ok(result)
         } else {
-            Ok(EntityData::new())
+            Err(StorageError::RecordNotFoundInCache(format!(
+                "Cache Key {:?} not found in Cache",
+                key
+            )))
         }
     }
 
-    async fn set_fields(&self, entity: &str, id: &str, data: &EntityData) -> StorageResult<()> {
+    async fn set_record(&self, entity: &str, id: &str, data: &Value) -> StorageResult<()> {
         let key = Self::create_key(entity, id);
         self.cache.insert(key, data.clone()).await;
         Ok(())
@@ -99,7 +95,6 @@ impl CacheAdapter for MokaBasedCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
 
     #[tokio::test]
     async fn test_basic_cache_operations() {
@@ -110,27 +105,26 @@ mod tests {
         let cache = MokaBasedCache::new(config);
 
         // Create test data
-        let mut data = EntityData::new();
-        data.insert("name".to_string(), "Test User".to_string());
-        data.insert("email".to_string(), "test@example.com".to_string());
+        let data = json!({
+            "name": "Test User",
+            "email": "test@example.com"
+        });
 
         // Test set_fields
-        cache.set_fields("users", "1", &data).await.unwrap();
+        cache.set_record("users", "1", &data).await.unwrap();
 
         // Test exists
         assert!(cache.exists("users", "1").await.unwrap());
         assert!(!cache.exists("users", "2").await.unwrap());
 
         // Test get_fields with specific fields
-        let result = cache.get_fields("users", "1", &["name"]).await.unwrap();
-        assert_eq!(result.len(), 1);
-        assert_eq!(result.get("name").unwrap(), "Test User");
+        let result = cache.get_record("users", "1", &["name"]).await.unwrap();
+        assert_eq!(result["name"], "Test User");
 
         // Test get_fields with all fields
-        let result = cache.get_fields("users", "1", &[]).await.unwrap();
-        assert_eq!(result.len(), 2);
-        assert_eq!(result.get("name").unwrap(), "Test User");
-        assert_eq!(result.get("email").unwrap(), "test@example.com");
+        let result = cache.get_record("users", "1", &[]).await.unwrap();
+        assert_eq!(result["name"], "Test User");
+        assert_eq!(result["email"], "test@example.com");
     }
 
     #[tokio::test]
@@ -142,11 +136,12 @@ mod tests {
         let cache = MokaBasedCache::new(config);
 
         // Create test data
-        let mut data = EntityData::new();
-        data.insert("name".to_string(), "Test User".to_string());
+        let data = json!({
+            "name": "Test User"
+        });
 
         // Set data in cache
-        cache.set_fields("users", "1", &data).await.unwrap();
+        cache.set_record("users", "1", &data).await.unwrap();
 
         // Verify it exists
         assert!(cache.exists("users", "1").await.unwrap());

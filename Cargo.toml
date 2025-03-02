@@ -1,15 +1,20 @@
 [package]
 name = "prism_cache"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 tokio = { version = "1.35.1", features = ["full"] }
-thiserror = "1.0.56"
+thiserror = "2.0.11"
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
-async-trait = "0.1.77"
 config = { version = "0.15.0", features = ["yaml"] }
 serde = { version = "1.0.196", features = ["derive"] }
 serde_yaml = "0.9.31"
 moka = { version = "0.12", features = ["future"] }
+async-trait = "0.1.77"
+
+# for providers
+datafusion = { version = "45.0.0", features = ["parquet"] }
+sqlx = { version = "0.8", features = [ "runtime-tokio", "tls-native-tls", "postgres" ] }
+serde_json = "1.0.139"

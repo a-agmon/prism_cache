@@ -5,11 +5,7 @@ database:
   # Database provider to use (mock)
   provider: mock
   # Additional provider-specific settings
-  settings:
-    # Example settings for mock adapter
-    default_age: "25"  # Default age for new users
-    name_prefix: "Test_"  # Prefix for user names
-    max_users: "100"  # Maximum number of users
+  settings: {}
 
 # Cache configuration
 cache:

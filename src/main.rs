@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::path::Path;
 use std::sync::Arc;
-use tracing::{error, info, Level};
+use tracing::{Level, error, info};
 use tracing_subscriber::FmtSubscriber;
 
 mod commands;

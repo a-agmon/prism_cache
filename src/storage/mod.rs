@@ -7,17 +7,14 @@ pub mod database;
 pub mod moka_cache;
 
 use async_trait::async_trait;
-use std::collections::HashMap;
+use serde_json::{Value, json};
 use std::sync::Arc;
 use thiserror::Error;
 use tracing::{debug, info};
 
 use crate::config::AppConfig;
-use database::{create_database, DatabaseType};
+use database::{DatabaseType, create_database};
 use moka_cache::MokaBasedCache;
-
-/// Type alias for entity data, which is a map of field names to values.
-pub type EntityData = HashMap<String, String>;
 
 /// Type alias for storage results.
 pub type StorageResult<T> = Result<T, StorageError>;
@@ -37,17 +34,19 @@ pub enum StorageError {
     #[error("Cache error: {0}")]
     CacheError(String),
 
+    /// Record not found in cache.
+    #[error("Record not found in cache: {0}")]
+    RecordNotFoundInCache(String),
+
     /// Entity not found.
     #[error("Entity not found: {0}")]
     EntityNotFound(String),
 
     /// Field not found.
-    #[allow(dead_code)]
     #[error("Field not found: {0}")]
     FieldNotFound(String),
 
     /// Configuration error.
-    #[allow(dead_code)]
     #[error("Configuration error: {0}")]
     ConfigError(String),
 }
@@ -56,7 +55,7 @@ pub enum StorageError {
 #[async_trait]
 pub trait DatabaseAdapter: Send + Sync {
     /// Fetches records from the database that match the given entity and id pattern.
-    /// Returns a vector of matching records.
+    /// Returns a vector of JSON values representing the matching records.
     ///
     /// The id parameter can contain wildcards or patterns depending on the database implementation.
     /// If fields is empty, returns all fields for each matching record.
@@ -65,26 +64,22 @@ pub trait DatabaseAdapter: Send + Sync {
         entity: &str,
         id: &str,
         fields: &[&str],
-    ) -> StorageResult<Vec<EntityData>>;
+    ) -> StorageResult<Vec<Value>>;
 }
 
 /// Cache adapter trait.
 ///
 /// This trait defines the interface for cache adapters.
+/// Note: We still need async_trait here because this trait is used as a trait object (dyn CacheAdapter).
 #[async_trait]
 pub trait CacheAdapter: Send + Sync {
     /// Gets fields from the cache.
     ///
     /// If fields is empty, returns all fields.
-    async fn get_fields(
-        &self,
-        entity: &str,
-        id: &str,
-        fields: &[&str],
-    ) -> StorageResult<EntityData>;
+    async fn get_record(&self, entity: &str, id: &str, fields: &[&str]) -> StorageResult<Value>;
 
     /// Sets fields in the cache.
-    async fn set_fields(&self, entity: &str, id: &str, data: &EntityData) -> StorageResult<()>;
+    async fn set_record(&self, entity: &str, id: &str, data: &Value) -> StorageResult<()>;
 
     /// Checks if an entity exists in the cache.
     #[allow(dead_code)]
@@ -126,17 +121,6 @@ impl StorageService {
         Ok(Self { db, cache })
     }
 
-    /// Creates a new in-memory storage service for testing.
-    ///
-    /// This method is useful for tests and examples.
-    #[allow(dead_code)]
-    pub fn new_in_memory() -> Self {
-        // Create a default configuration for testing
-        let config = AppConfig::default();
-
-        Self::new(&config).expect("Failed to create in-memory storage service")
-    }
-
     /// Fetches fields from the storage.
     ///
     /// This method first tries to get the fields from the cache.
@@ -144,39 +128,54 @@ impl StorageService {
     /// If the fields are found in the database, they are stored in the cache.
     ///
     /// If fields is empty, returns all fields.
-    pub async fn fetch_fields(
+    pub async fn fetch_record(
         &self,
         entity: &str,
         id: &str,
         fields: &[&str],
-    ) -> StorageResult<EntityData> {
-        debug!("Fetching fields {:?} for {}:{}", fields, entity, id);
-
+    ) -> StorageResult<Value> {
         // Try to get from cache first
-        let cache_result = self.cache.get_fields(entity, id, fields).await;
+        let cache_result = self.cache.get_record(entity, id, fields).await;
 
         match cache_result {
-            Ok(data) if !data.is_empty() => {
-                debug!("Cache hit for {}:{}", entity, id);
+            Ok(data) => {
+                debug!("Record [{entity}]:[{id}] Retrieved from Cache");
                 Ok(data)
             }
-            _ => {
-                debug!("Cache miss for {}:{}, fetching from database", entity, id);
-                // Fetch from database
-                let db_result = self.db.fetch_record(entity, id, fields).await?;
-
-                // Store in cache
-                if !db_result.is_empty() {
-                    debug!("Storing {}:{} in cache", entity, id);
-                    self.cache.set_fields(entity, id, &db_result[0]).await?;
-                }
-
-                Ok(if db_result.is_empty() {
-                    EntityData::new()
-                } else {
-                    db_result[0].clone()
-                })
+            Err(StorageError::RecordNotFoundInCache(_)) => {
+                debug!("Record [{entity}]:[{id}] Not found in Cache, fetching from Database");
+                self.fetch_from_database(entity, id, fields).await
             }
+            Err(e) => Err(e),
+        }
+    }
+
+    async fn fetch_from_database(
+        &self,
+        entity: &str,
+        id: &str,
+        fields: &[&str],
+    ) -> StorageResult<Value> {
+        let db_result = self.db.fetch_record(entity, id, fields).await;
+        match db_result {
+            Ok(data) => {
+                if let Some(value) = data.first() {
+                    debug!("Record [{entity}]:[{id}] Retrieved from Database, storing in Cache");
+                    self.cache.set_record(entity, id, value).await?;
+                    Ok(value.clone())
+                } else {
+                    Err(StorageError::DatabaseError(format!(
+                        "No record found in database for [{entity}]:[{id}] but no DB error was returned",
+                        entity = entity,
+                        id = id
+                    )))
+                }
+            }
+            Err(StorageError::RecordNotInDatabase(_)) => {
+                debug!("Record not found in database: {entity}:{id}");
+                Err(StorageError::EntityNotFound(format!("{entity}:{id}")))
+            }
+            Err(e) => Err(e),
         }
     }
 }

@@ -3,7 +3,7 @@
 //! This module provides types and functions for working with the Redis protocol.
 
 use thiserror::Error;
-use tracing::{debug, error, trace};
+use tracing::{debug, error};
 
 /// Error type for Redis protocol operations.
 #[derive(Debug, Error)]
@@ -196,7 +196,10 @@ impl RedisFrame {
                         .collect();
                     return Err(RedisError::Protocol(format!(
                         "Unknown element type byte: {} (hex: {:02X}) at position {}. Next bytes: [{}]",
-                        data[pos] as char, data[pos], pos, debug_bytes.join(" ")
+                        data[pos] as char,
+                        data[pos],
+                        pos,
+                        debug_bytes.join(" ")
                     )));
                 }
             };
