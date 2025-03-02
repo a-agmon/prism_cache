@@ -56,22 +56,10 @@ impl MokaBasedCache {
 
 #[async_trait]
 impl CacheAdapter for MokaBasedCache {
-    async fn get_record(&self, entity: &str, id: &str, fields: &[&str]) -> StorageResult<Value> {
+    async fn get_record(&self, entity: &str, id: &str) -> StorageResult<Value> {
         let key = Self::create_key(entity, id);
         if let Some(entry) = self.cache.get(&key).await {
-            // If fields is empty, return all fields
-            if fields.is_empty() {
-                return Ok(entry);
-            }
-
-            // Filter the requested fields
-            let mut result = json!({});
-            for &field in fields {
-                if entry[field] != Value::Null {
-                    result[field] = entry[field].clone();
-                }
-            }
-            Ok(result)
+            return Ok(entry);
         } else {
             Err(StorageError::RecordNotFoundInCache(format!(
                 "Cache Key {:?} not found in Cache",
@@ -117,12 +105,8 @@ mod tests {
         assert!(cache.exists("users", "1").await.unwrap());
         assert!(!cache.exists("users", "2").await.unwrap());
 
-        // Test get_fields with specific fields
-        let result = cache.get_record("users", "1", &["name"]).await.unwrap();
-        assert_eq!(result["name"], "Test User");
-
-        // Test get_fields with all fields
-        let result = cache.get_record("users", "1", &[]).await.unwrap();
+        // Test get_record
+        let result = cache.get_record("users", "1").await.unwrap();
         assert_eq!(result["name"], "Test User");
         assert_eq!(result["email"], "test@example.com");
     }

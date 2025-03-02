@@ -25,10 +25,9 @@ impl DatabaseAdapter for DatabaseType {
         &self,
         entity: &str,
         id: &str,
-        fields: &[&str],
     ) -> StorageResult<Vec<Value>> {
         match self {
-            Self::Mock(adapter) => adapter.fetch_record(entity, id, fields).await,
+            Self::Mock(adapter) => adapter.fetch_record(entity, id).await,
         }
     }
 }

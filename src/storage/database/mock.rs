@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 use std::collections::HashMap;
 use tracing::{debug, info};
 
-use crate::storage::{DatabaseAdapter, StorageError, StorageResult};
+use crate::storage::{DatabaseAdapter, StorageError, StorageResult, assert_required_settings};
 
 /// Mock database adapter that stores data in memory.
 ///
@@ -21,6 +21,14 @@ impl MockAdapter {
     /// Creates a new in-memory database adapter.
     pub fn new(settings: HashMap<String, String>) -> Self {
         info!("Creating mock database adapter");
+        
+        // Example of checking for optional settings with defaults
+        let sample_size = if let Some(size) = settings.get("sample_size") {
+            size.parse::<usize>().unwrap_or(3)
+        } else {
+            3 // Default sample size
+        };
+        
         let mut data = HashMap::new();
         // Create sample data
         data.insert(
@@ -55,6 +63,19 @@ impl MockAdapter {
 
         Self { data, settings }
     }
+    
+    /// Example of creating a mock adapter with required settings
+    pub fn with_required_settings(settings: HashMap<String, String>) -> StorageResult<Self> {
+        // Check for required settings
+        let required_keys = ["data_source", "max_records"];
+        assert_required_settings(&settings, &required_keys)?;
+        
+        info!("Creating mock database adapter with required settings");
+        info!("Data source: {}", settings.get("data_source").unwrap());
+        info!("Max records: {}", settings.get("max_records").unwrap());
+        
+        Ok(Self::new(settings))
+    }
 
     /// Fetches a record by ID from the mock database
     fn get_record(&self, id: &str) -> StorageResult<Value> {
@@ -71,7 +92,6 @@ impl DatabaseAdapter for MockAdapter {
         &self,
         entity: &str,
         id: &str,
-        _fields: &[&str], // Ignore fields parameter
     ) -> StorageResult<Vec<Value>> {
         debug!("InMemory DB: Fetching records for {entity}:{id}");
         let entry = self.get_record(id)?;
