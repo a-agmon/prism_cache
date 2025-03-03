@@ -47,8 +47,8 @@ fn load_config() -> Result<AppConfig, Box<dyn Error>> {
 }
 
 /// Initialize the storage service
-fn init_storage(config: &AppConfig) -> Result<Arc<StorageService>, Box<dyn Error>> {
-    let storage = Arc::new(StorageService::new(config)?);
+async fn init_storage(config: &AppConfig) -> Result<Arc<StorageService>, Box<dyn Error>> {
+    let storage = Arc::new(StorageService::new(config).await?);
     info!("Storage service initialized successfully");
     Ok(storage)
 }
@@ -66,7 +66,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let config = load_config()?;
     init_logging(&config.logging.level)?;
     info!("Starting Prism Cache server");
-    let storage = init_storage(&config)?;
+    let storage = init_storage(&config).await?;
     run_server(config, storage).await?;
     Ok(())
 }

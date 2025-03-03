@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use serde_json::{Value, json};
 use std::sync::Arc;
 use thiserror::Error;
-use tracing::{debug, info};
+use tracing::{debug, info, trace};
 use std::collections::HashMap;
 
 use crate::config::AppConfig;
@@ -102,14 +102,14 @@ impl StorageService {
     ///
     /// This method initializes the database and cache adapters based on the
     /// provided configuration.
-    pub fn new(config: &AppConfig) -> StorageResult<Self> {
+    pub async fn new(config: &AppConfig) -> StorageResult<Self> {
         info!("Initializing storage service with configuration");
 
         // Initialize database adapter based on configuration
         let db = Arc::new(create_database(
             &config.database.provider,
             config.database.settings.clone(),
-        ));
+        ).await?);
 
         // Initialize cache adapter using Moka
         info!(
@@ -155,7 +155,7 @@ impl StorageService {
                 Ok(result)
             }
             Err(StorageError::RecordNotFoundInCache(_)) => {
-                debug!("Record [{entity}]:[{id}] Not found in Cache, fetching from Database");
+                trace!("Record [{entity}]:[{id}] Not found in Cache, fetching from Database");
                 self.fetch_from_database(entity, id, fields).await
             }
             Err(e) => Err(e),

@@ -27,6 +27,8 @@ pub enum ConfigError {
 pub enum DatabaseProvider {
     /// Mock database (in-memory, for testing)
     Mock,
+    /// Postgres database
+    Postgres,
 }
 
 impl TryFrom<String> for DatabaseProvider {
@@ -35,6 +37,7 @@ impl TryFrom<String> for DatabaseProvider {
     fn try_from(s: String) -> Result<Self, Self::Error> {
         match s.to_lowercase().as_str() {
             "mock" => Ok(DatabaseProvider::Mock),
+            "postgres" => Ok(DatabaseProvider::Postgres),
             _ => Err(format!("Invalid database provider '{}'.", s)),
         }
     }

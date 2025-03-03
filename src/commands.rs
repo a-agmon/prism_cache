@@ -136,7 +136,10 @@ async fn handle_get(
             debug!("Entity not found for key: {}", key);
             Ok(RedisFrame::Null.to_bytes())
         }
-        Err(e) => Err(map_error(e)),
+        Err(e) => {
+            error!("Error fetching record: {}", e);
+            Ok(RedisFrame::Null.to_bytes())
+        }, // => error might get lost here. 
     }
 }
 

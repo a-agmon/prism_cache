@@ -3,9 +3,15 @@
 # Database configuration
 database:
   # Database provider to use (mock)
-  provider: mock
+  provider: postgres
   # Additional provider-specific settings
-  settings: {}
+  settings:
+    user: myuser
+    password: mypassword
+    host: localhost
+    port: 5432
+    dbname: postgres
+    fields: employee_id, first_name, last_name, email
 
 # Cache configuration
 cache:
@@ -22,6 +28,6 @@ server:
 # Logging configuration
 logging:
   # Log level (trace, debug, info, warn, error)
-  level: debug
+  level: trace
   # Log file (optional)
   file: ~ 

@@ -1,13 +1,15 @@
 use async_trait::async_trait;
-use duckdb::arrow::array::{Array, BooleanArray, Float64Array, Int64Array, StringArray};
+use duckdb::arrow::array::{Array, BooleanArray, Float64Array, Int32Array, Int64Array, StringArray};
 use duckdb::arrow::datatypes::DataType;
 use duckdb::{Connection, Result, arrow::array::RecordBatch, params};
 use serde_json::Value;
+use tracing::{debug, trace};
 use std::collections::HashMap;
 use tokio::sync::Mutex;
 
 use crate::storage::{DatabaseAdapter, StorageError, StorageResult, assert_required_settings};
 
+#[derive(Debug)]
 pub struct PostgresAdapter {
     connection: Mutex<Connection>,
     id_field: String,
@@ -31,6 +33,8 @@ impl PostgresAdapter {
             settings.get("dbname").unwrap()
         );
 
+        debug!("Connecting to {}", conn_str);
+
         let attach_str = format!(
             "ATTACH '{}' AS db (TYPE postgres, SCHEMA 'public');",
             conn_str
@@ -38,13 +42,16 @@ impl PostgresAdapter {
 
         let conn =
             Connection::open_in_memory().map_err(|e| StorageError::DatabaseError(e.to_string()))?;
-        conn.execute("INSTALL postgres; LOAD postgres;", params![])
+        debug!("Installing postgres");
+        conn.execute_batch("INSTALL postgres; LOAD postgres;")
             .map_err(|e| StorageError::DatabaseError(e.to_string()))?;
-        conn.execute(&attach_str, params![])
+        debug!("Attaching to {}", conn_str);
+        conn.execute_batch(&attach_str)
             .map_err(|e| StorageError::DatabaseError(e.to_string()))?;
+        debug!("Successfully attached to {}", conn_str);
         Ok(Self {
             connection: Mutex::new(conn),
-            id_field: "id".to_string(),
+            id_field: "employee_id".to_string(),
             fields: fields.to_string(),
         })
     }
@@ -53,11 +60,13 @@ impl PostgresAdapter {
 #[async_trait]
 impl DatabaseAdapter for PostgresAdapter {
     async fn fetch_record(&self, entity: &str, id: &str) -> StorageResult<Vec<Value>> {
+        trace!("Fetching record for entity: {}", entity);
         // create the sql statement to fetch the record
         let sql = format!(
             "SELECT {} FROM db.{} WHERE {} = ?",
             self.fields, entity, self.id_field
         );
+        trace!("Building Query: {}", sql);
         let conn = self.connection.lock().await;
         let mut stmt = conn
             .prepare(&sql)
@@ -67,12 +76,13 @@ impl DatabaseAdapter for PostgresAdapter {
             .query_arrow(params![id])
             .map_err(|e| StorageError::DatabaseError(e.to_string()))?
             .collect();
-
+        trace!("Executed Query");
         if let Some(record) = results.first() {
+            trace!("Converting RecordBatch to JSON");
             let json_value = record_batch_to_json(record);
             return Ok(vec![json_value]);
         }
-
+        trace!("No record found");
         Ok(vec![])
     }
 }
@@ -89,6 +99,10 @@ fn record_batch_to_json(record: &RecordBatch) -> serde_json::Value {
             DataType::Utf8 => col
                 .as_any()
                 .downcast_ref::<StringArray>()
+                .map(|arr| arr.value(0).to_string()),
+            DataType::Int32 => col
+                .as_any()
+                .downcast_ref::<Int32Array>()
                 .map(|arr| arr.value(0).to_string()),
             DataType::Int64 => col
                 .as_any()
