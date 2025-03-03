@@ -21,14 +21,14 @@ impl MockAdapter {
     /// Creates a new in-memory database adapter.
     pub fn new(settings: HashMap<String, String>) -> Self {
         info!("Creating mock database adapter");
-        
+
         // Example of checking for optional settings with defaults
         let sample_size = if let Some(size) = settings.get("sample_size") {
             size.parse::<usize>().unwrap_or(3)
         } else {
             3 // Default sample size
         };
-        
+
         let mut data = HashMap::new();
         // Create sample data
         data.insert(
@@ -63,17 +63,17 @@ impl MockAdapter {
 
         Self { data, settings }
     }
-    
+
     /// Example of creating a mock adapter with required settings
     pub fn with_required_settings(settings: HashMap<String, String>) -> StorageResult<Self> {
         // Check for required settings
         let required_keys = ["data_source", "max_records"];
         assert_required_settings(&settings, &required_keys)?;
-        
+
         info!("Creating mock database adapter with required settings");
         info!("Data source: {}", settings.get("data_source").unwrap());
         info!("Max records: {}", settings.get("max_records").unwrap());
-        
+
         Ok(Self::new(settings))
     }
 
@@ -88,11 +88,7 @@ impl MockAdapter {
 
 #[async_trait]
 impl DatabaseAdapter for MockAdapter {
-    async fn fetch_record(
-        &self,
-        entity: &str,
-        id: &str,
-    ) -> StorageResult<Vec<Value>> {
+    async fn fetch_record(&self, entity: &str, id: &str) -> StorageResult<Vec<Value>> {
         debug!("InMemory DB: Fetching records for {entity}:{id}");
         let entry = self.get_record(id)?;
         Ok(vec![entry])
