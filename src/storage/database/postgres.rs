@@ -11,6 +11,13 @@ use tracing::{debug, trace};
 
 use crate::storage::{DatabaseAdapter, StorageError, StorageResult, assert_required_settings};
 
+const USER_KEY: &str = "user";
+const PASSWORD_KEY: &str = "password";
+const HOST_KEY: &str = "host";
+const PORT_KEY: &str = "port";
+const DBNAME_KEY: &str = "dbname";
+const FIELDS_KEY: &str = "fields";
+
 #[derive(Debug)]
 pub struct PostgresAdapter {
     connection: Mutex<Connection>,
@@ -20,17 +27,24 @@ pub struct PostgresAdapter {
 
 impl PostgresAdapter {
     pub async fn new(settings: &HashMap<String, String>) -> Result<Self, StorageError> {
-        let required_keys = ["user", "password", "host", "port", "dbname", "fields"];
+        let required_keys = [
+            USER_KEY,
+            PASSWORD_KEY,
+            HOST_KEY,
+            PORT_KEY,
+            DBNAME_KEY,
+            FIELDS_KEY,
+        ];
         assert_required_settings(settings, &required_keys)?;
         // Now we can safely unwrap these values
-        let fields = settings.get("fields").unwrap();
+        let fields = settings.get(FIELDS_KEY).unwrap();
         let conn_str = format!(
             "postgresql://{}:{}@{}:{}/{}",
-            settings.get("user").unwrap(),
-            settings.get("password").unwrap(),
-            settings.get("host").unwrap(),
-            settings.get("port").unwrap(),
-            settings.get("dbname").unwrap()
+            settings.get(USER_KEY).unwrap(),
+            settings.get(PASSWORD_KEY).unwrap(),
+            settings.get(HOST_KEY).unwrap(),
+            settings.get(PORT_KEY).unwrap(),
+            settings.get(DBNAME_KEY).unwrap()
         );
         let attach_str = format!(
             "ATTACH '{}' AS db (TYPE postgres, SCHEMA 'public');",

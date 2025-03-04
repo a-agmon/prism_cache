@@ -3,11 +3,6 @@
 [database]
 # List of data providers
 [[database.providers]]
-name = "users"
-provider = "Mock"
-settings = { sample_size = "10" }
-
-[[database.providers]]
 name = "products"
 provider = "Mock"
 settings = { sample_size = "5" }
