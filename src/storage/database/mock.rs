@@ -1,67 +1,66 @@
 //! In-memory database adapter implementation.
 
+use crate::storage::{DatabaseAdapter, StorageError, StorageResult, assert_required_settings};
 use async_trait::async_trait;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::collections::HashMap;
 use tracing::{debug, info};
 
-use crate::storage::{DatabaseAdapter, StorageError, StorageResult, assert_required_settings};
-
-/// Mock database adapter that stores data in memory.
-///
-/// This adapter is used for testing and development.
-/// Data is lost when the application restarts.
-#[derive(Debug)]
+/// Mock database adapter for testing
 pub struct MockAdapter {
-    data: HashMap<String, Value>,
-    settings: HashMap<String, String>,
+    data: HashMap<String, HashMap<String, Value>>,
 }
 
 impl MockAdapter {
-    /// Creates a new in-memory database adapter.
-    pub fn new(settings: HashMap<String, String>) -> Self {
-        info!("Creating mock database adapter");
-
-        // Example of checking for optional settings with defaults
-        let sample_size = if let Some(size) = settings.get("sample_size") {
-            size.parse::<usize>().unwrap_or(3)
-        } else {
-            3 // Default sample size
-        };
-
+    /// Creates a new mock adapter
+    pub fn new(_settings: HashMap<String, String>) -> Self {
         let mut data = HashMap::new();
-        // Create sample data
-        data.insert(
-            "user1".into(),
+        
+        // Add some sample data for testing
+        let mut users = HashMap::new();
+        users.insert(
+            "123".to_string(),
             json!({
+                "id": "123",
                 "name": "John Doe",
                 "email": "john@example.com",
-                "age": 30,
-                "id": "1"
+                "age": 30
             }),
         );
-
-        data.insert(
-            "user2".into(),
+        users.insert(
+            "456".to_string(),
             json!({
-                "name": "Jane Doe",
+                "id": "456",
+                "name": "Jane Smith",
                 "email": "jane@example.com",
-                "age": 25,
-                "id": "2"
+                "age": 25
             }),
         );
-
-        data.insert(
-            "user3".into(),
+        data.insert("users".to_string(), users);
+        
+        // Add products data
+        let mut products = HashMap::new();
+        products.insert(
+            "789".to_string(),
             json!({
-                "name": "Jim Doe",
-                "email": "jim@example.com",
-                "age": 35,
-                "id": "3"
+                "id": "789",
+                "name": "Laptop",
+                "price": 999.99,
+                "stock": 10
             }),
         );
-
-        Self { data, settings }
+        products.insert(
+            "101".to_string(),
+            json!({
+                "id": "101",
+                "name": "Smartphone",
+                "price": 499.99,
+                "stock": 20
+            }),
+        );
+        data.insert("products".to_string(), products);
+        
+        Self { data }
     }
 
     /// Example of creating a mock adapter with required settings
@@ -76,21 +75,27 @@ impl MockAdapter {
 
         Ok(Self::new(settings))
     }
-
-    /// Fetches a record by ID from the mock database
-    fn get_record(&self, id: &str) -> StorageResult<Value> {
-        self.data
-            .get(id)
-            .cloned()
-            .ok_or_else(|| StorageError::RecordNotInDatabase(format!("Record not found: {id}")))
-    }
 }
 
 #[async_trait]
 impl DatabaseAdapter for MockAdapter {
-    async fn fetch_record(&self, entity: &str, id: &str) -> StorageResult<Vec<Value>> {
-        debug!("InMemory DB: Fetching records for {entity}:{id}");
-        let entry = self.get_record(id)?;
-        Ok(vec![entry])
+    async fn fetch_record(
+        &self,
+        entity: &str,
+        id: &str,
+    ) -> StorageResult<Vec<Value>> {
+        debug!("MockAdapter: Fetching record for entity={}, id={}", entity, id);
+        
+        // Check if the entity exists
+        let entity_data = self.data.get(entity).ok_or_else(|| {
+            StorageError::EntityNotFound(format!("Entity '{}' not found", entity))
+        })?;
+        
+        // Check if the ID exists
+        let record = entity_data.get(id).ok_or_else(|| {
+            StorageError::RecordNotInDatabase(format!("Record '{}' not found", id))
+        })?;
+        
+        Ok(vec![record.clone()])
     }
 }

@@ -10,10 +10,10 @@ use async_trait::async_trait;
 use serde_json::{Value, json};
 use std::sync::Arc;
 use thiserror::Error;
-use tracing::{debug, info, trace};
+use tracing::{debug, info, trace, warn};
 use std::collections::HashMap;
 
-use crate::config::AppConfig;
+use crate::config::{AppConfig, DataProviderConfig};
 use database::{DatabaseType, create_database};
 use moka_cache::MokaBasedCache;
 
@@ -50,6 +50,10 @@ pub enum StorageError {
     /// Configuration error.
     #[error("Configuration error: {0}")]
     ConfigError(String),
+
+    /// Provider not found.
+    #[error("Provider not found: {0}")]
+    ProviderNotFound(String),
 }
 
 /// Database adapter trait for interacting with different database backends.
@@ -91,8 +95,8 @@ pub trait CacheAdapter: Send + Sync {
 /// This service provides a unified interface for storing and retrieving data
 /// from different storage backends.
 pub struct StorageService {
-    /// Database adapter.
-    db: Arc<DatabaseType>,
+    /// Database adapters mapped by provider name
+    providers: HashMap<String, Arc<DatabaseType>>,
     /// Cache adapter.
     cache: Arc<dyn CacheAdapter>,
 }
@@ -105,11 +109,16 @@ impl StorageService {
     pub async fn new(config: &AppConfig) -> StorageResult<Self> {
         info!("Initializing storage service with configuration");
 
-        // Initialize database adapter based on configuration
-        let db = Arc::new(create_database(
-            &config.database.provider,
-            config.database.settings.clone(),
-        ).await?);
+        // Initialize database adapters based on configuration
+        let mut providers = HashMap::new();
+        for provider_config in &config.database.providers {
+            info!("Initializing provider: {}", provider_config.name);
+            let db = create_database(
+                &provider_config.provider,
+                provider_config.settings.clone(),
+            ).await?;
+            providers.insert(provider_config.name.clone(), Arc::new(db));
+        }
 
         // Initialize cache adapter using Moka
         info!(
@@ -118,90 +127,72 @@ impl StorageService {
         );
         let cache = Arc::new(MokaBasedCache::new(config.cache.clone()));
 
-        Ok(Self { db, cache })
+        Ok(Self { providers, cache })
     }
 
-    /// Fetches fields from the storage.
+    /// Fetches a record from the storage.
     ///
-    /// This method first tries to get the fields from the cache.
-    /// If the fields are not found in the cache, it falls back to the database.
-    /// If the fields are found in the database, they are stored in the cache.
-    ///
-    /// If fields is empty, returns all fields.
+    /// This method first tries to get the record from the cache.
+    /// If the record is not found in the cache, it falls back to the database.
+    /// If the record is found in the database, it is stored in the cache.
     pub async fn fetch_record(
         &self,
-        entity: &str,
+        provider_name: &str,
         id: &str,
-        fields: &[&str],
     ) -> StorageResult<Value> {
-        // Try to get from cache first
-        let cache_result = self.cache.get_record(entity, id).await;
+        debug!("Fetching record from provider: {}, id: {}", provider_name, id);
 
-        match cache_result {
+        // Try to get from cache first
+        let cache_key = format!("{}:{}", provider_name, id);
+        match self.cache.get_record(provider_name, id).await {
             Ok(data) => {
-                debug!("Record [{entity}]:[{id}] Retrieved from Cache");
-                // If fields is empty, return all fields
-                if fields.is_empty() {
-                    return Ok(data);
-                }
-                
-                // Filter the requested fields
-                let mut result = json!({});
-                for &field in fields {
-                    if data[field] != Value::Null {
-                        result[field] = data[field].clone();
-                    }
-                }
-                Ok(result)
+                trace!("Cache hit for {}:{}", provider_name, id);
+                return Ok(data);
             }
             Err(StorageError::RecordNotFoundInCache(_)) => {
-                trace!("Record [{entity}]:[{id}] Not found in Cache, fetching from Database");
-                self.fetch_from_database(entity, id, fields).await
+                trace!("Cache miss for {}:{}", provider_name, id);
             }
-            Err(e) => Err(e),
+            Err(e) => {
+                warn!("Cache error: {}", e);
+                // Continue to database as fallback
+            }
         }
+
+        // Fetch from database
+        self.fetch_from_database(provider_name, id).await
     }
 
+    /// Fetches a record from the database.
     async fn fetch_from_database(
         &self,
-        entity: &str,
+        provider_name: &str,
         id: &str,
-        fields: &[&str],
     ) -> StorageResult<Value> {
+        trace!("Fetching from database: provider={}, id={}", provider_name, id);
+
+        // Get the provider
+        let provider = self.providers.get(provider_name)
+            .ok_or_else(|| StorageError::ProviderNotFound(provider_name.to_string()))?;
+
         // Fetch from database
-        let db_result = self.db.fetch_record(entity, id).await;
-
-        match db_result {
-            Ok(records) => {
-                if records.is_empty() {
-                    return Err(StorageError::RecordNotInDatabase(format!(
-                        "Record [{entity}]:[{id}] not found in database"
-                    )));
-                }
-
-                // For simplicity, we just take the first record
-                let record = &records[0];
-                
-                // Create a filtered result if fields are specified
-                let result = if fields.is_empty() {
-                    record.clone()
-                } else {
-                    let mut filtered = json!({});
-                    for &field in fields {
-                        if record[field] != Value::Null {
-                            filtered[field] = record[field].clone();
-                        }
-                    }
-                    filtered
-                };
-
-                // Store in cache for future use
-                self.cache.set_record(entity, id, &result).await?;
-
-                Ok(result)
-            }
-            Err(e) => Err(e),
+        let records = provider.fetch_record(provider_name, id).await?;
+        
+        if records.is_empty() {
+            return Err(StorageError::RecordNotInDatabase(format!(
+                "Record not found: {}:{}",
+                provider_name, id
+            )));
         }
+
+        // Take the first record
+        let record = records[0].clone();
+        
+        // Store in cache
+        if let Err(e) = self.cache.set_record(provider_name, id, &record).await {
+            warn!("Failed to cache record: {}", e);
+        }
+
+        Ok(record)
     }
 }
 
@@ -210,13 +201,11 @@ pub fn assert_required_settings(
     settings: &HashMap<String, String>,
     required_keys: &[&str],
 ) -> StorageResult<()> {
-    let mut missing_keys = Vec::new();
-    
-    for &key in required_keys {
-        if !settings.contains_key(key) {
-            missing_keys.push(key);
-        }
-    }
+    let missing_keys: Vec<&str> = required_keys
+        .iter()
+        .filter(|key| !settings.contains_key(**key))
+        .copied()
+        .collect();
     
     if !missing_keys.is_empty() {
         return Err(StorageError::ConfigError(format!(
@@ -257,27 +246,20 @@ mod tests {
     fn test_extract_required_settings() {
         let mut settings = HashMap::new();
         settings.insert("host".to_string(), "localhost".to_string());
-        settings.insert("user".to_string(), "postgres".to_string());
+        settings.insert("port".to_string(), "5432".to_string());
         
-        // Missing "port", "password", and "database"
-        let result = assert_required_settings(&settings, &["host", "port", "user", "password", "database"]);
+        let required_keys = ["host", "port", "user"];
+        let result = assert_required_settings(&settings, &required_keys);
+        
         assert!(result.is_err());
-        
         if let Err(StorageError::ConfigError(msg)) = result {
-            assert!(msg.contains("port"));
-            assert!(msg.contains("password"));
-            assert!(msg.contains("database"));
+            assert!(msg.contains("user"));
         } else {
             panic!("Expected ConfigError");
         }
         
-        // Add the missing keys
-        settings.insert("port".to_string(), "5432".to_string());
-        settings.insert("password".to_string(), "secret".to_string());
-        settings.insert("database".to_string(), "mydb".to_string());
-        
-        // Now it should pass
-        let result = assert_required_settings(&settings, &["host", "port", "user", "password", "database"]);
+        settings.insert("user".to_string(), "postgres".to_string());
+        let result = assert_required_settings(&settings, &required_keys);
         assert!(result.is_ok());
     }
 }

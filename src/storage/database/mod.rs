@@ -9,11 +9,11 @@ use async_trait::async_trait;
 use serde_json::Value;
 use std::collections::HashMap;
 
-use crate::storage::{DatabaseAdapter, StorageResult};
+use crate::config::DatabaseProvider;
+use crate::storage::{DatabaseAdapter, StorageError, StorageResult};
 pub use mock::MockAdapter;
 pub use postgres::PostgresAdapter;
 /// Database adapter type
-#[derive(Debug)]
 pub enum DatabaseType {
     /// In-memory database adapter
     Mock(MockAdapter),
@@ -37,12 +37,12 @@ impl DatabaseAdapter for DatabaseType {
 
 /// Create a new database adapter based on configuration
 pub async fn create_database(
-    provider: &crate::config::DatabaseProvider,
+    provider: &DatabaseProvider,
     settings: HashMap<String, String>,
-) -> Result<DatabaseType, crate::storage::StorageError> {
+) -> Result<DatabaseType, StorageError> {
     match provider {
-        crate::config::DatabaseProvider::Mock => Ok(DatabaseType::Mock(MockAdapter::new(settings))),
-        crate::config::DatabaseProvider::Postgres => {
+        DatabaseProvider::Mock => Ok(DatabaseType::Mock(MockAdapter::new(settings))),
+        DatabaseProvider::Postgres => {
             let adapter = PostgresAdapter::new(&settings).await?;
             Ok(DatabaseType::Postgres(adapter))
         }

@@ -1,0 +1,28 @@
+# Prism Cache Configuration
+
+[database]
+# List of data providers
+[[database.providers]]
+name = "users"
+provider = "Mock"
+settings = { sample_size = "10" }
+
+[[database.providers]]
+name = "products"
+provider = "Mock"
+settings = { sample_size = "5" }
+
+[[database.providers]]
+name = "employees"
+provider = "Postgres"
+settings = { user = "myuser", password = "mypassword", host = "localhost", port = "5432", dbname = "postgres", fields = "employee_id, first_name, last_name, email" }
+
+[cache]
+max_entries = 10000
+ttl_seconds = 300
+
+[server]
+bind_address = "127.0.0.1:6379"
+
+[logging]
+level = "trace" 
