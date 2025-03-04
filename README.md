@@ -1,3 +1,4 @@
+![Prism Cache Logo](web/PrismCacheLogo.png)
 # Prism Cache
 
 A Redis-protocol compatible caching layer for databases, bridging the gap between traditional databases and high-performance caching.
@@ -274,3 +275,90 @@ When adding a new database adapter:
 3. Add comprehensive tests
 4. Update documentation
 5. Submit a pull request 
+
+## Multi-Provider Feature Testing
+
+This branch (`feature/multi-provider`) implements support for multiple data providers, allowing you to access different data sources through a unified Redis-compatible interface.
+
+### How to Test
+
+1. **Clone the repository and checkout the branch:**
+   ```bash
+   git clone https://github.com/a-agmon/prism_cache.git
+   cd prism_cache
+   git checkout feature/multi-provider
+   ```
+
+2. **Build the project:**
+   ```bash
+   cargo build
+   ```
+
+3. **Configure your data providers:**
+   
+   Create a `config.toml` file in the project root (or use the provided sample):
+   ```toml
+   # Prism Cache Configuration
+
+   [database]
+   # List of data providers
+   [[database.providers]]
+   name = "users"
+   provider = "Mock"
+   settings = { sample_size = "10" }
+
+   [[database.providers]]
+   name = "products"
+   provider = "Mock"
+   settings = { sample_size = "5" }
+
+   [cache]
+   max_entries = 10000
+   ttl_seconds = 300
+
+   [server]
+   bind_address = "127.0.0.1:6379"
+
+   [logging]
+   level = "debug"
+   ```
+
+4. **Run the server:**
+   ```bash
+   cargo run
+   ```
+
+5. **Test with Redis CLI:**
+   
+   In a new terminal, use Redis CLI to test the different providers:
+   ```bash
+   # Get a user record
+   redis-cli GET users:123
+   
+   # Get a product record
+   redis-cli GET products:789
+   
+   # Get a specific field from a user record
+   redis-cli HGET users:123 name
+   ```
+
+### What's New
+
+- **Multiple Data Providers**: Configure and use multiple data sources simultaneously
+- **Provider-Based Access**: Use the format `provider:id` to access records from specific providers
+- **Improved Error Handling**: Better error messages for provider not found cases
+- **Sample Configuration**: Includes a sample configuration with multiple providers
+
+### Feedback
+
+Please test the feature and provide feedback on:
+1. Configuration usability
+2. Command syntax and behavior
+3. Error handling
+4. Performance with multiple providers
+
+Report any issues or suggestions by creating a GitHub issue or contacting the development team.
+
+## License
+
+MIT 
