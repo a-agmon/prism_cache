@@ -6,6 +6,10 @@
 
 A Redis-protocol compatible caching layer for databases, bridging the gap between traditional databases and high-performance caching.
 
+<div align="center">
+<img src="web/diagram.png" alt="Prism Cache Logo"/>
+</div>
+
 ## Overview
 
 Prism Cache provides a Redis-compatible interface to your existing databases, offering:
