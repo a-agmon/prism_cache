@@ -1,4 +1,7 @@
-![Prism Cache Logo](web/PrismCacheLogo.png)
+<div align="center">
+<img src="web/PrismCacheLogo.png" alt="Prism Cache Logo" width="300"/>
+</div>
+
 # Prism Cache
 
 A Redis-protocol compatible caching layer for databases, bridging the gap between traditional databases and high-performance caching.
