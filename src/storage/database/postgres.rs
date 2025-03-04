@@ -1,11 +1,13 @@
 use async_trait::async_trait;
-use duckdb::arrow::array::{Array, BooleanArray, Float64Array, Int32Array, Int64Array, StringArray};
+use duckdb::arrow::array::{
+    Array, BooleanArray, Float64Array, Int32Array, Int64Array, StringArray,
+};
 use duckdb::arrow::datatypes::DataType;
 use duckdb::{Connection, Result, arrow::array::RecordBatch, params};
 use serde_json::Value;
-use tracing::{debug, trace};
 use std::collections::HashMap;
 use tokio::sync::Mutex;
+use tracing::{debug, trace};
 
 use crate::storage::{DatabaseAdapter, StorageError, StorageResult, assert_required_settings};
 
@@ -18,10 +20,8 @@ pub struct PostgresAdapter {
 
 impl PostgresAdapter {
     pub async fn new(settings: &HashMap<String, String>) -> Result<Self, StorageError> {
-        // Check for required settings
         let required_keys = ["user", "password", "host", "port", "dbname", "fields"];
         assert_required_settings(settings, &required_keys)?;
-
         // Now we can safely unwrap these values
         let fields = settings.get("fields").unwrap();
         let conn_str = format!(
@@ -32,9 +32,6 @@ impl PostgresAdapter {
             settings.get("port").unwrap(),
             settings.get("dbname").unwrap()
         );
-
-        debug!("Connecting to {}", conn_str);
-
         let attach_str = format!(
             "ATTACH '{}' AS db (TYPE postgres, SCHEMA 'public');",
             conn_str
