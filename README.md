@@ -1,7 +1,6 @@
 <div align="center">
 <img src="web/PrismCacheLogo.jpg" alt="Prism Cache Logo" width="300"/>
-     <h3><strong>A Redis API compatible caching layer for databases and big data tables (Iceberg, Delta, etc) <br/>
-          bridging the gap between high durability and high-performance caching.</strong></h3>
+     <h3><strong>A caching layer for big data tables (Iceberg, Delta, etc) and databases with Redis compatible API, bridging the gap between data durability and high-performance caching</strong></h3>
 </div>
 <br/>
 
@@ -9,11 +8,11 @@
 
 Prism Cache provides a Redis-compatible API to your existing databases and big data tables, offering:
 
-- **Redis Protocol Support**: Interact with your database using familiar Redis commands
+- **Redis Protocol Support**: Interact with your database using familiar Redis commands (GET and HGET)
+- **JSON Record Retrieval**: Automatically retrieves records in JSON format
 - **Transparent Caching**: Automatic caching of database queries with configurable TTL
-- **Database Flexibility**: Support for various database backends (SQL, In-Memory, etc.)
-- **Performance**: Reduce database load by caching frequently accessed data
-- **Consistency**: Configurable cache invalidation strategies
+- **Database Flexibility**: Support for various data backends
+- **Simple**: Eliminates the need for separate ETL infrastructure by directly caching big data tables
 
 ## How It Works
 
