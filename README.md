@@ -1,5 +1,5 @@
 <div align="center">
-<img src="web/PrismCacheLogo.png" alt="Prism Cache Logo" width="300"/>
+<img src="web/PrismCacheLogo.jpg" alt="Prism Cache Logo" width="300"/>
      <h3><strong>A Redis API compatible caching layer for databases and big data tables (Iceberg, Delta, etc) <br/>
           bridging the gap between high durability and high-performance caching.</strong></h3>
 </div>
