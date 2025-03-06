@@ -1,10 +1,10 @@
 //! In-memory database adapter implementation.
 
-use crate::storage::{DatabaseAdapter, StorageError, StorageResult, assert_required_settings};
+use crate::storage::{DatabaseAdapter, StorageError, StorageResult};
 use async_trait::async_trait;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::HashMap;
-use tracing::{debug, info};
+use tracing::{debug};
 
 /// Mock database adapter for testing
 pub struct MockAdapter {
@@ -15,7 +15,7 @@ impl MockAdapter {
     /// Creates a new mock adapter
     pub fn new(_settings: HashMap<String, String>) -> Self {
         let mut data = HashMap::new();
-        
+
         // Add some sample data for testing
         let mut users = HashMap::new();
         users.insert(
@@ -37,7 +37,7 @@ impl MockAdapter {
             }),
         );
         data.insert("users".to_string(), users);
-        
+
         // Add products data
         let mut products = HashMap::new();
         products.insert(
@@ -59,43 +59,42 @@ impl MockAdapter {
             }),
         );
         data.insert("products".to_string(), products);
-        
+
         Self { data }
     }
 
-    /// Example of creating a mock adapter with required settings
-    pub fn with_required_settings(settings: HashMap<String, String>) -> StorageResult<Self> {
-        // Check for required settings
-        let required_keys = ["data_source", "max_records"];
-        assert_required_settings(&settings, &required_keys)?;
+    // => Example of creating a mock adapter with required settings (should import assert_required_settings)
+    // pub fn with_required_settings(settings: HashMap<String, String>) -> StorageResult<Self> {
+    //     // Check for required settings
+    //     let required_keys = ["data_source", "max_records"];
+    //     assert_required_settings(&settings, &required_keys)?;
 
-        info!("Creating mock database adapter with required settings");
-        info!("Data source: {}", settings.get("data_source").unwrap());
-        info!("Max records: {}", settings.get("max_records").unwrap());
+    //     info!("Creating mock database adapter with required settings");
+    //     info!("Data source: {}", settings.get("data_source").unwrap());
+    //     info!("Max records: {}", settings.get("max_records").unwrap());
 
-        Ok(Self::new(settings))
-    }
+    //     Ok(Self::new(settings))
+    // }
 }
 
 #[async_trait]
 impl DatabaseAdapter for MockAdapter {
-    async fn fetch_record(
-        &self,
-        entity: &str,
-        id: &str,
-    ) -> StorageResult<Vec<Value>> {
-        debug!("MockAdapter: Fetching record for entity={}, id={}", entity, id);
-        
+    async fn fetch_record(&self, entity: &str, id: &str) -> StorageResult<Vec<Value>> {
+        debug!(
+            "MockAdapter: Fetching record for entity={}, id={}",
+            entity, id
+        );
+
         // Check if the entity exists
         let entity_data = self.data.get(entity).ok_or_else(|| {
             StorageError::EntityNotFound(format!("Entity '{}' not found", entity))
         })?;
-        
+
         // Check if the ID exists
         let record = entity_data.get(id).ok_or_else(|| {
             StorageError::RecordNotInDatabase(format!("Record '{}' not found", id))
         })?;
-        
+
         Ok(vec![record.clone()])
     }
 }

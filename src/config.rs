@@ -29,6 +29,8 @@ pub enum DatabaseProvider {
     Mock,
     /// Postgres database provider
     Postgres,
+    /// Azure Delta database provider
+    AzDelta,
 }
 
 /// Configuration for a data provider
@@ -88,13 +90,11 @@ pub struct AppConfig {
 impl Default for DatabaseConfig {
     fn default() -> Self {
         Self {
-            providers: vec![
-                DataProviderConfig {
-                    name: "users".to_string(),
-                    provider: DatabaseProvider::Mock,
-                    settings: HashMap::new(),
-                },
-            ],
+            providers: vec![DataProviderConfig {
+                name: "users".to_string(),
+                provider: DatabaseProvider::Mock,
+                settings: HashMap::new(),
+            }],
         }
     }
 }
@@ -132,50 +132,5 @@ impl Default for AppConfig {
             server: ServerConfig::default(),
             logging: LoggingConfig::default(),
         }
-    }
-}
-
-impl AppConfig {
-    /// Loads the configuration from a file
-    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, ConfigError> {
-        let path = path.as_ref();
-        info!("Loading configuration from {}", path.display());
-
-        let mut cfg = config::Config::builder();
-
-        // Start with default values
-        cfg = cfg.add_source(config::File::from_str(
-            include_str!("../config/default.yaml"),
-            config::FileFormat::Yaml,
-        ));
-
-        // Override with the specified file if it exists
-        if path.exists() {
-            cfg = cfg.add_source(config::File::from(path));
-        }
-
-        // Override with environment variables
-        cfg = cfg.add_source(
-            config::Environment::with_prefix("PRISM_CACHE")
-                .separator("__")
-                .try_parsing(true),
-        );
-
-        // Build the config
-        let config = cfg.build().map_err(ConfigError::Other)?;
-
-        // Deserialize
-        config.try_deserialize().map_err(|e| {
-            if e.to_string().contains("database.provider") {
-                // If it's a database provider error, try to extract the invalid value
-                if let Some(invalid_value) = e.to_string().split('`').nth(1) {
-                    return ConfigError::InvalidDatabaseProvider(format!(
-                        "Invalid database provider '{}'. Available providers are: mock",
-                        invalid_value
-                    ));
-                }
-            }
-            ConfigError::Other(e)
-        })
     }
 }
