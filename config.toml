@@ -1,0 +1,31 @@
+# Prism Cache Configuration
+
+[database]
+[[database.providers]]
+name = "products"
+provider = "Mock"
+settings = { sample_size = "5" }
+
+[[database.providers]]
+provider = "Postgres"
+name = "employees"
+settings = { user = "myuser", password = "mypassword", host = "localhost", port = "5432", dbname = "postgres", fields = "employee_id, first_name, last_name, email" }
+
+
+[[database.providers]]
+provider = "AzDelta"
+name = "flights"
+settings.delta_table_name = "flights"
+settings.delta_table_path = "abfss://test_worspace_aa@server_name/lake_test.lakehouse/Tables"
+settings.delta_record_query = "SELECT \"FLIGHT_NUMBER\", \"YEAR\", \"ORIGIN_AIRPORT\", \"TAIL_NUMBER\", \"DESTINATION_AIRPORT\" FROM flights WHERE \"FLIGHT_NUMBER\" = {}"
+
+
+[cache]
+max_entries = 10000
+ttl_seconds = 300
+
+[server]
+bind_address = "127.0.0.1:6379"
+
+[logging]
+level = "trace" 

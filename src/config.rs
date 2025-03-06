@@ -4,6 +4,8 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::error::Error;
+use std::fmt;
 use std::path::Path;
 use thiserror::Error;
 use tracing::info;
@@ -20,173 +22,115 @@ pub enum ConfigError {
     Other(#[from] config::ConfigError),
 }
 
-/// Database provider type
-#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-#[serde(try_from = "String")]
+/// Database provider types
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DatabaseProvider {
-    /// Mock database (in-memory, for testing)
+    /// Mock database provider
     Mock,
-    /// Postgres database
+    /// Postgres database provider
     Postgres,
+    /// Azure Delta database provider
+    AzDelta,
 }
 
-impl TryFrom<String> for DatabaseProvider {
-    type Error = String;
+/// Configuration for a data provider
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DataProviderConfig {
+    /// Name of the data provider
+    pub name: String,
+    /// Type of database provider
+    pub provider: DatabaseProvider,
+    /// Database connection settings
+    pub settings: HashMap<String, String>,
+}
 
-    fn try_from(s: String) -> Result<Self, Self::Error> {
-        match s.to_lowercase().as_str() {
-            "mock" => Ok(DatabaseProvider::Mock),
-            "postgres" => Ok(DatabaseProvider::Postgres),
-            _ => Err(format!("Invalid database provider '{}'.", s)),
+/// Database configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DatabaseConfig {
+    /// List of data providers
+    pub providers: Vec<DataProviderConfig>,
+}
+
+/// Cache configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CacheConfig {
+    /// Maximum number of entries in the cache
+    pub max_entries: usize,
+    /// Time to live in seconds
+    pub ttl_seconds: u64,
+}
+
+/// Server configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServerConfig {
+    /// Bind address for the server
+    pub bind_address: String,
+}
+
+/// Logging configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoggingConfig {
+    /// Log level
+    pub level: String,
+}
+
+/// Application configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppConfig {
+    /// Database configuration
+    pub database: DatabaseConfig,
+    /// Cache configuration
+    pub cache: CacheConfig,
+    /// Server configuration
+    pub server: ServerConfig,
+    /// Logging configuration
+    pub logging: LoggingConfig,
+}
+
+impl Default for DatabaseConfig {
+    fn default() -> Self {
+        Self {
+            providers: vec![DataProviderConfig {
+                name: "users".to_string(),
+                provider: DatabaseProvider::Mock,
+                settings: HashMap::new(),
+            }],
         }
     }
 }
 
-impl Default for DatabaseProvider {
+impl Default for CacheConfig {
     fn default() -> Self {
-        Self::Mock
+        Self {
+            max_entries: 1000,
+            ttl_seconds: 60,
+        }
     }
-}
-
-/// Database configuration
-#[derive(Debug, Deserialize, Serialize, Clone, Default)]
-pub struct DatabaseConfig {
-    /// Database provider to use
-    #[serde(default)]
-    pub provider: DatabaseProvider,
-
-    /// Additional provider-specific settings
-    #[serde(default)]
-    pub settings: HashMap<String, String>,
-}
-
-/// Cache configuration
-#[derive(Debug, Deserialize, Serialize, Clone, Default)]
-pub struct CacheConfig {
-    /// Maximum number of entries in the cache
-    #[serde(default = "default_cache_max_entries")]
-    pub max_entries: usize,
-
-    /// Time-to-live for cache entries in seconds
-    #[serde(default = "default_cache_ttl")]
-    pub ttl_seconds: u64,
-}
-
-fn default_cache_max_entries() -> usize {
-    10000
-}
-
-fn default_cache_ttl() -> u64 {
-    300 // 5 minutes
-}
-
-/// Server configuration
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct ServerConfig {
-    /// Address to bind to
-    #[serde(default = "default_bind_address")]
-    pub bind_address: String,
-}
-
-fn default_bind_address() -> String {
-    "127.0.0.1:6379".to_string()
 }
 
 impl Default for ServerConfig {
     fn default() -> Self {
         Self {
-            bind_address: default_bind_address(),
+            bind_address: "127.0.0.1:6379".to_string(),
         }
     }
-}
-
-/// Logging configuration
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct LoggingConfig {
-    /// Log level
-    #[serde(default = "default_log_level")]
-    pub level: String,
-
-    /// Whether to log to a file
-    #[serde(default)]
-    pub file: Option<String>,
-}
-
-fn default_log_level() -> String {
-    "info".to_string()
 }
 
 impl Default for LoggingConfig {
     fn default() -> Self {
         Self {
-            level: default_log_level(),
-            file: None,
+            level: "info".to_string(),
         }
     }
 }
 
-/// Application configuration
-#[derive(Debug, Deserialize, Serialize, Clone, Default)]
-pub struct AppConfig {
-    /// Database configuration
-    #[serde(default)]
-    pub database: DatabaseConfig,
-
-    /// Cache configuration
-    #[serde(default)]
-    pub cache: CacheConfig,
-
-    /// Server configuration
-    #[serde(default)]
-    pub server: ServerConfig,
-
-    /// Logging configuration
-    #[serde(default)]
-    pub logging: LoggingConfig,
-}
-
-impl AppConfig {
-    /// Loads the configuration from a file
-    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, ConfigError> {
-        let path = path.as_ref();
-        info!("Loading configuration from {}", path.display());
-
-        let mut cfg = config::Config::builder();
-
-        // Start with default values
-        cfg = cfg.add_source(config::File::from_str(
-            include_str!("../config/default.yaml"),
-            config::FileFormat::Yaml,
-        ));
-
-        // Override with the specified file if it exists
-        if path.exists() {
-            cfg = cfg.add_source(config::File::from(path));
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            database: DatabaseConfig::default(),
+            cache: CacheConfig::default(),
+            server: ServerConfig::default(),
+            logging: LoggingConfig::default(),
         }
-
-        // Override with environment variables
-        cfg = cfg.add_source(
-            config::Environment::with_prefix("PRISM_CACHE")
-                .separator("__")
-                .try_parsing(true),
-        );
-
-        // Build the config
-        let config = cfg.build().map_err(ConfigError::Other)?;
-
-        // Deserialize
-        config.try_deserialize().map_err(|e| {
-            if e.to_string().contains("database.provider") {
-                // If it's a database provider error, try to extract the invalid value
-                if let Some(invalid_value) = e.to_string().split('`').nth(1) {
-                    return ConfigError::InvalidDatabaseProvider(format!(
-                        "Invalid database provider '{}'. Available providers are: mock",
-                        invalid_value
-                    ));
-                }
-            }
-            ConfigError::Other(e)
-        })
     }
 }
